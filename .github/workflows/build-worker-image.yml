@@ -199,10 +199,41 @@ jobs:
 
             CURRENT_YTDLP_BASE="$(normalize_version_base "$CURRENT_YTDLP")"
 
+            echo ""
+            echo "Deno diagnostic from image:"
+            docker run --rm "${IMAGE_NAME}" sh -lc '
+              echo "PATH=$PATH"
+
+              echo "command -v deno:"
+              command -v deno || true
+
+              echo "possible deno paths:"
+              ls -l /opt/deno/bin/deno 2>/dev/null || true
+              ls -l /root/.deno/bin/deno 2>/dev/null || true
+
+              echo "deno --version raw:"
+              if command -v deno >/dev/null 2>&1; then
+                deno --version || true
+              elif [ -x /opt/deno/bin/deno ]; then
+                /opt/deno/bin/deno --version || true
+              elif [ -x /root/.deno/bin/deno ]; then
+                /root/.deno/bin/deno --version || true
+              else
+                echo "deno not found"
+              fi
+            ' || true
+
             CURRENT_DENO="$(
-              docker run --rm "${IMAGE_NAME}" \
-                sh -lc 'deno --version | sed -n "1s/^deno //p"' 2>/dev/null \
-              | head -n 1 \
+              docker run --rm "${IMAGE_NAME}" sh -lc '
+                if command -v deno >/dev/null 2>&1; then
+                  deno --version
+                elif [ -x /opt/deno/bin/deno ]; then
+                  /opt/deno/bin/deno --version
+                elif [ -x /root/.deno/bin/deno ]; then
+                  /root/.deno/bin/deno --version
+                fi
+              ' 2>/dev/null \
+              | awk "NR==1 {print \$2}" \
               | tr -d '\r' \
               || true
             )"
