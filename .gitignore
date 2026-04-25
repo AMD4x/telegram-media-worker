@@ -1,0 +1,35 @@
+# Secrets and local environment
+.env
+*.env
+.env.*
+secrets/
+cookies/
+*cookies*.txt
+*youtube*.txt
+*facebook*.txt
+*.cookie
+*.cookies
+
+# Local backups
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.bak
+backup/
+backups/
+
+# Runtime files
+work/
+*.log
+*.mp4
+*.m4a
+*.mp3
+*.webm
+*.part
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
