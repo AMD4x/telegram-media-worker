@@ -515,53 +515,117 @@ jobs:
 
             GENERIC_DNS_FAILED=0
 
-            for HEIGHT in $HEIGHTS; do
-              FORMAT_SELECTOR="bestvideo[ext=mp4][height<=${HEIGHT}]+bestaudio[ext=m4a]/best[ext=mp4][height<=${HEIGHT}]/bestvideo[height<=${HEIGHT}]+bestaudio/best[height<=${HEIGHT}]/bestvideo+bestaudio/best"
+            generic_format_selector_for_height() {
+              local height="$1"
+
+              printf '%s' "bestvideo[ext=mp4][height<=${height}]+bestaudio[ext=m4a]/best[ext=mp4][height<=${height}]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]"
+            }
+
+            next_higher_height() {
+              case "$MAX_HEIGHT_NUM" in
+                360)
+                  echo "480"
+                  ;;
+                480)
+                  echo "720"
+                  ;;
+                720)
+                  echo "1080"
+                  ;;
+                1080)
+                  echo "1440"
+                  ;;
+                1440)
+                  echo "2160"
+                  ;;
+                *)
+                  echo ""
+                  ;;
+              esac
+            }
+
+            try_generic_height() {
+              local attempt_label="$1"
+              local height="$2"
+              local format_selector
+
+              format_selector="$(generic_format_selector_for_height "$height")"
 
               set +e
-              try_download "generic-primary" "$HEIGHT" "$FORMAT_SELECTOR"
-              TRY_RC=$?
+              try_download "$attempt_label" "$height" "$format_selector"
+              local try_rc=$?
               set -e
 
-              if [ "$TRY_RC" -eq 90 ]; then
-                echo "DNS failure in generic primary. Skipping remaining generic heights."
+              if [ "$try_rc" -eq 90 ]; then
+                echo "DNS failure in ${attempt_label}. Skipping remaining generic attempts."
                 GENERIC_DNS_FAILED=1
-                break
+                return 90
               fi
-            done
 
-            if [ "$GENERIC_DNS_FAILED" -ne 1 ]; then
-              echo ""
-              echo "GENERIC_SMART_FALLBACK=1"
+              return "$try_rc"
+            }
 
-              set +e
-              try_sorted_download "generic-wide-best" "ext:mp4:m4a"
-              GWB_RC=$?
-              set -e
+            if [ "$AUTO_MODE" = "1" ]; then
+              echo "GENERIC_AUTO_ORDER=${HEIGHTS} highest"
 
-              if [ "$GWB_RC" -eq 90 ]; then
-                echo "DNS failure in generic wide fallback."
-                GENERIC_DNS_FAILED=1
+              for HEIGHT in $HEIGHTS; do
+                try_generic_height "generic-auto-capped" "$HEIGHT" || true
+
+                if [ "$GENERIC_DNS_FAILED" -eq 1 ]; then
+                  break
+                fi
+              done
+
+              if [ "$GENERIC_DNS_FAILED" -ne 1 ]; then
+                echo ""
+                echo "GENERIC_HIGHEST_FALLBACK=1"
+
+                set +e
+                try_sorted_download "generic-highest-fallback" "ext:mp4:m4a"
+                GHF_RC=$?
+                set -e
+
+                if [ "$GHF_RC" -eq 90 ]; then
+                  echo "DNS failure in generic highest fallback."
+                  GENERIC_DNS_FAILED=1
+                fi
               fi
-            fi
+            else
+              NEXT_HIGHER_HEIGHT="$(next_higher_height)"
 
-            if [ "$GENERIC_DNS_FAILED" -ne 1 ]; then
-              echo ""
-              echo "GENERIC_CAPPED_FALLBACK=1"
-
-              if [ "$AUTO_MODE" = "1" ]; then
-                SORT_EXPR="ext:mp4:m4a"
+              if [ -n "$NEXT_HIGHER_HEIGHT" ]; then
+                echo "GENERIC_SELECTED_ORDER=${HEIGHTS} ${NEXT_HIGHER_HEIGHT} highest"
               else
-                SORT_EXPR="res:${MAX_HEIGHT_NUM},ext:mp4:m4a"
+                echo "GENERIC_SELECTED_ORDER=${HEIGHTS} highest"
               fi
 
-              set +e
-              try_sorted_download "generic-capped-fallback" "$SORT_EXPR"
-              GCF_RC=$?
-              set -e
+              for HEIGHT in $HEIGHTS; do
+                try_generic_height "generic-selected-or-lower" "$HEIGHT" || true
 
-              if [ "$GCF_RC" -eq 90 ]; then
-                echo "DNS failure in generic capped fallback."
+                if [ "$GENERIC_DNS_FAILED" -eq 1 ]; then
+                  break
+                fi
+              done
+
+              if [ "$GENERIC_DNS_FAILED" -ne 1 ] && [ -n "$NEXT_HIGHER_HEIGHT" ]; then
+                echo ""
+                echo "GENERIC_NEXT_HIGHER_FALLBACK=${NEXT_HIGHER_HEIGHT}"
+
+                try_generic_height "generic-next-higher" "$NEXT_HIGHER_HEIGHT" || true
+              fi
+
+              if [ "$GENERIC_DNS_FAILED" -ne 1 ]; then
+                echo ""
+                echo "GENERIC_HIGHEST_FALLBACK=1"
+
+                set +e
+                try_sorted_download "generic-highest-fallback" "ext:mp4:m4a"
+                GHF_RC=$?
+                set -e
+
+                if [ "$GHF_RC" -eq 90 ]; then
+                  echo "DNS failure in generic highest fallback."
+                fi
               fi
             fi
           fi
