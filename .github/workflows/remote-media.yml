@@ -80,6 +80,8 @@ jobs:
             exit 1
           fi
 
+          echo "::add-mask::${SOURCE_URL}"
+
           if [ -z "${TELEGRAM_TOKEN:-}" ]; then
             echo "ERROR: Missing TELEGRAM_TOKEN secret."
             exit 1
@@ -133,13 +135,19 @@ jobs:
             REFERER_URL="https://www.reddit.com/"
           fi
 
+          echo "::add-mask::${WORK_URL}"
+
+          if [ -n "$VIDEO_ID" ]; then
+            echo "::add-mask::${VIDEO_ID}"
+          fi
+
           echo "PLATFORM=${PLATFORM}"
-          echo "ORIGINAL_URL=${SOURCE_URL}"
-          echo "NORMALIZED_URL=${WORK_URL}"
+          echo "ORIGINAL_URL=masked"
+          echo "NORMALIZED_URL=masked"
           echo "MAX_HEIGHT=${MAX_HEIGHT}"
           echo "MAX_HEIGHT_NUM=${MAX_HEIGHT_NUM}"
           echo "AUTO_MODE=${AUTO_MODE}"
-          echo "REFERER_URL=${REFERER_URL}"
+          echo "REFERER_PLATFORM=${PLATFORM}"
 
           COOKIES_ARGS=()
 
@@ -149,17 +157,11 @@ jobs:
             printf '%s\n' "$YOUTUBE_COOKIES_TXT" > "$COOKIES_FILE"
             sed -i 's/\r$//' "$COOKIES_FILE"
 
-            COOKIE_BYTES="$(wc -c < "$COOKIES_FILE" | tr -d ' ')"
-            COOKIE_LINES="$(wc -l < "$COOKIES_FILE" | tr -d ' ')"
-            COOKIE_DOMAIN_LINES="$(grep -Ei 'youtube\.com|google\.com|accounts\.google\.com' "$COOKIES_FILE" | wc -l | tr -d ' ')"
             COOKIE_HAS_NETSCAPE="$(grep -E '^# Netscape HTTP Cookie File' "$COOKIES_FILE" >/dev/null 2>&1 && echo yes || echo no)"
 
             COOKIES_ARGS=(--cookies "$COOKIES_FILE")
 
             echo "YOUTUBE_COOKIES=enabled"
-            echo "COOKIE_BYTES=${COOKIE_BYTES}"
-            echo "COOKIE_LINES=${COOKIE_LINES}"
-            echo "COOKIE_YOUTUBE_OR_GOOGLE_LINES=${COOKIE_DOMAIN_LINES}"
             echo "COOKIE_HAS_NETSCAPE_HEADER=${COOKIE_HAS_NETSCAPE}"
           elif [ "$IS_FACEBOOK" = "1" ] && [ -n "${FACEBOOK_COOKIES_TXT:-}" ]; then
             COOKIES_FILE="$RUNNER_TEMP/facebook-cookies.txt"
@@ -167,17 +169,11 @@ jobs:
             printf '%s\n' "$FACEBOOK_COOKIES_TXT" > "$COOKIES_FILE"
             sed -i 's/\r$//' "$COOKIES_FILE"
 
-            COOKIE_BYTES="$(wc -c < "$COOKIES_FILE" | tr -d ' ')"
-            COOKIE_LINES="$(wc -l < "$COOKIES_FILE" | tr -d ' ')"
-            COOKIE_DOMAIN_LINES="$(grep -Ei 'facebook\.com|fbcdn\.net|messenger\.com' "$COOKIES_FILE" | wc -l | tr -d ' ')"
             COOKIE_HAS_NETSCAPE="$(grep -E '^# Netscape HTTP Cookie File' "$COOKIES_FILE" >/dev/null 2>&1 && echo yes || echo no)"
 
             COOKIES_ARGS=(--cookies "$COOKIES_FILE")
 
             echo "FACEBOOK_COOKIES=enabled"
-            echo "COOKIE_BYTES=${COOKIE_BYTES}"
-            echo "COOKIE_LINES=${COOKIE_LINES}"
-            echo "COOKIE_FACEBOOK_LINES=${COOKIE_DOMAIN_LINES}"
             echo "COOKIE_HAS_NETSCAPE_HEADER=${COOKIE_HAS_NETSCAPE}"
           else
             if [ "$IS_YOUTUBE" = "1" ]; then
@@ -214,6 +210,15 @@ jobs:
           HEIGHTS="$HEIGHTS 360"
 
           echo "HEIGHTS=${HEIGHTS}"
+
+          print_log_safely() {
+            local log_file="$1"
+
+            sed -E \
+              -e 's#https?://[^[:space:]]+#<masked-url>#g' \
+              -e 's#[0-9]{10,}#<masked-id>#g' \
+              "$log_file"
+          }
 
           send_to_telegram() {
             local file_path="$1"
@@ -262,7 +267,7 @@ jobs:
 
             if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
               echo "Telegram send failed."
-              cat "$response_file" || true
+              echo "Telegram response is hidden for public-log safety."
               return 1
             fi
 
@@ -273,7 +278,7 @@ jobs:
             fi
 
             echo "Telegram response did not contain ok=true."
-            cat "$response_file" || true
+            echo "Telegram response is hidden for public-log safety."
             return 1
           }
 
@@ -284,6 +289,8 @@ jobs:
           }
 
           handle_downloaded_file() {
+            set +e
+
             local file_path="$1"
             local success_height="$2"
             local attempt_label="$3"
@@ -319,10 +326,8 @@ jobs:
 
             echo "RENAMED_FILE=${file_path}"
 
-            set +e
             send_to_telegram "$file_path" "$success_height" "$attempt_label"
             local send_rc=$?
-            set -e
 
             if [ "$send_rc" -eq 0 ]; then
               exit 0
@@ -378,7 +383,7 @@ jobs:
               "$WORK_URL" > "$log_file" 2>&1
             local rc=$?
 
-            cat "$log_file"
+            print_log_safely "$log_file"
 
             if is_dns_failure_log "$log_file"; then
               echo "DNS_DOWNLOAD_FAILURE=1"
@@ -441,7 +446,7 @@ jobs:
               "$WORK_URL" > "$log_file" 2>&1
             local rc=$?
 
-            cat "$log_file"
+            print_log_safely "$log_file"
 
             if is_dns_failure_log "$log_file"; then
               echo "DNS_DOWNLOAD_FAILURE=1"
