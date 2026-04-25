@@ -1012,6 +1012,12 @@ jobs:
             grep -Eqi "Failed to resolve|Address family for hostname not supported|Temporary failure in name resolution|Name or service not known" "$log_file"
           }
 
+          is_rate_limit_log() {
+            local log_file="$1"
+
+            grep -Eqi "HTTP Error 429|HTTPError 429|Too Many Requests" "$log_file"
+          }
+
           handle_downloaded_file() {
             set +e
 
@@ -1147,6 +1153,19 @@ jobs:
               return 90
             fi
 
+            if [ "$rc" -ne 0 ] && is_rate_limit_log "$log_file" && [ "${ALLOW_RATE_LIMIT_RETRY:-1}" = "1" ]; then
+              echo "RATE_LIMIT_RETRY=1"
+              echo "RATE_LIMIT_RETRY_DELAY_SECONDS=4"
+              echo "RATE_LIMIT_RETRY_REASON=HTTP_429_TOO_MANY_REQUESTS"
+
+              progress_stage "rate_limited_retry" "42" "Retrying" "Rate_limited_retrying_in_4s"
+
+              sleep 4
+
+              ALLOW_RATE_LIMIT_RETRY=0 try_download "${attempt_label}-retry429" "$height" "$format_selector" "${extra_args[@]}"
+              return $?
+            fi
+
             local file_path
             file_path="$(find work -maxdepth 1 -type f -name "video.*" | head -n 1 || true)"
 
@@ -1210,6 +1229,19 @@ jobs:
               echo "DNS_DOWNLOAD_FAILURE=1"
               echo "DNS failure detected in sorted fallback."
               return 90
+            fi
+
+            if [ "$rc" -ne 0 ] && is_rate_limit_log "$log_file" && [ "${ALLOW_RATE_LIMIT_RETRY:-1}" = "1" ]; then
+              echo "RATE_LIMIT_RETRY=1"
+              echo "RATE_LIMIT_RETRY_DELAY_SECONDS=4"
+              echo "RATE_LIMIT_RETRY_REASON=HTTP_429_TOO_MANY_REQUESTS"
+
+              progress_stage "rate_limited_retry" "42" "Retrying" "Rate_limited_retrying_in_4s"
+
+              sleep 4
+
+              ALLOW_RATE_LIMIT_RETRY=0 try_sorted_download "${attempt_label}-retry429" "$sort_expr" "${extra_args[@]}"
+              return $?
             fi
 
             local file_path
