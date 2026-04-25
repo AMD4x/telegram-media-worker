@@ -1,4 +1,4 @@
-name: Fast Remote Media To Telegram
+name: Remote Media To Telegram
 
 on:
   workflow_dispatch:
@@ -10,9 +10,10 @@ on:
       max_height:
         description: "Max height"
         required: true
-        default: "1080"
+        default: "auto"
         type: choice
         options:
+          - "auto"
           - "2160"
           - "1440"
           - "1080"
@@ -55,6 +56,14 @@ jobs:
           MAX_HEIGHT="${{ inputs.max_height }}"
           MAX_FILE_BYTES="50000000"
           CONCURRENT_FRAGMENTS="4"
+
+          if [ "$MAX_HEIGHT" = "auto" ]; then
+            AUTO_MODE="1"
+            MAX_HEIGHT_NUM="2160"
+          else
+            AUTO_MODE="0"
+            MAX_HEIGHT_NUM="$MAX_HEIGHT"
+          fi
 
           echo "yt-dlp version:"
           python3 -m yt_dlp --version
@@ -125,6 +134,8 @@ jobs:
           echo "ORIGINAL_URL=${SOURCE_URL}"
           echo "NORMALIZED_URL=${WORK_URL}"
           echo "MAX_HEIGHT=${MAX_HEIGHT}"
+          echo "MAX_HEIGHT_NUM=${MAX_HEIGHT_NUM}"
+          echo "AUTO_MODE=${AUTO_MODE}"
           echo "REFERER_URL=${REFERER_URL}"
 
           COOKIES_ARGS=()
@@ -153,27 +164,29 @@ jobs:
 
           HEIGHTS=""
 
-          if [ "$MAX_HEIGHT" -ge 2160 ] 2>/dev/null; then
+          if [ "$MAX_HEIGHT_NUM" -ge 2160 ] 2>/dev/null; then
             HEIGHTS="$HEIGHTS 2160"
           fi
 
-          if [ "$MAX_HEIGHT" -ge 1440 ] 2>/dev/null; then
+          if [ "$MAX_HEIGHT_NUM" -ge 1440 ] 2>/dev/null; then
             HEIGHTS="$HEIGHTS 1440"
           fi
 
-          if [ "$MAX_HEIGHT" -ge 1080 ] 2>/dev/null; then
+          if [ "$MAX_HEIGHT_NUM" -ge 1080 ] 2>/dev/null; then
             HEIGHTS="$HEIGHTS 1080"
           fi
 
-          if [ "$MAX_HEIGHT" -ge 720 ] 2>/dev/null; then
+          if [ "$MAX_HEIGHT_NUM" -ge 720 ] 2>/dev/null; then
             HEIGHTS="$HEIGHTS 720"
           fi
 
-          if [ "$MAX_HEIGHT" -ge 480 ] 2>/dev/null; then
+          if [ "$MAX_HEIGHT_NUM" -ge 480 ] 2>/dev/null; then
             HEIGHTS="$HEIGHTS 480"
           fi
 
           HEIGHTS="$HEIGHTS 360"
+
+          echo "HEIGHTS=${HEIGHTS}"
 
           send_to_telegram() {
             local file_path="$1"
@@ -237,6 +250,52 @@ jobs:
             return 1
           }
 
+          is_dns_failure_log() {
+            local log_file="$1"
+
+            grep -Eqi "Failed to resolve|Address family for hostname not supported|Temporary failure in name resolution|Name or service not known" "$log_file"
+          }
+
+          handle_downloaded_file() {
+            local file_path="$1"
+            local success_height="$2"
+            local attempt_label="$3"
+
+            if [ ! -f "$file_path" ]; then
+              return 1
+            fi
+
+            local size_bytes
+            size_bytes="$(stat -c%s "$file_path")"
+
+            if [ "$size_bytes" -le 0 ]; then
+              echo "Downloaded file is empty."
+              return 1
+            fi
+
+            echo "DOWNLOAD_SUCCESS=1"
+            echo "DOWNLOAD_SUCCESS_HEIGHT=${success_height}"
+            echo "DOWNLOAD_SUCCESS_ATTEMPT=${attempt_label}"
+            echo "DOWNLOAD_SIZE_BYTES=${size_bytes}"
+
+            set +e
+            send_to_telegram "$file_path" "$success_height" "$attempt_label"
+            local send_rc=$?
+            set -e
+
+            if [ "$send_rc" -eq 0 ]; then
+              exit 0
+            fi
+
+            if [ "$send_rc" -eq 2 ]; then
+              echo "Downloaded file exceeded Telegram limit. Trying a lower or alternate format."
+              return 2
+            fi
+
+            echo "Telegram send failed after successful download."
+            exit 1
+          }
+
           try_download() {
             local attempt_label="$1"
             local height="$2"
@@ -244,6 +303,7 @@ jobs:
             shift 3
 
             local extra_args=("$@")
+            local log_file="work/yt-dlp-${attempt_label}-${height}.log"
 
             echo ""
             echo "=============================="
@@ -273,13 +333,13 @@ jobs:
               -o "work/video.%(ext)s" \
               "${COOKIES_ARGS[@]}" \
               "${extra_args[@]}" \
-              "$WORK_URL" > "work/yt-dlp-${attempt_label}-${height}.log" 2>&1
+              "$WORK_URL" > "$log_file" 2>&1
             local rc=$?
             set -e
 
-            cat "work/yt-dlp-${attempt_label}-${height}.log"
+            cat "$log_file"
 
-            if grep -Eqi "Failed to resolve|Address family for hostname not supported|Temporary failure in name resolution|Name or service not known" "work/yt-dlp-${attempt_label}-${height}.log"; then
+            if is_dns_failure_log "$log_file"; then
               echo "DNS_DOWNLOAD_FAILURE=1"
               echo "DNS failure detected. Skipping remaining heights for this client."
               return 90
@@ -289,25 +349,75 @@ jobs:
             file_path="$(find work -maxdepth 1 -type f -name "video.*" | head -n 1 || true)"
 
             if [ "$rc" -eq 0 ] && [ -n "$file_path" ] && [ -f "$file_path" ]; then
-              local size_bytes
-              size_bytes="$(stat -c%s "$file_path")"
-
-              echo "DOWNLOAD_SUCCESS=1"
-              echo "DOWNLOAD_SUCCESS_HEIGHT=${height}"
-              echo "DOWNLOAD_SUCCESS_ATTEMPT=${attempt_label}"
-              echo "DOWNLOAD_SIZE_BYTES=${size_bytes}"
-
-              if send_to_telegram "$file_path" "$height" "$attempt_label"; then
-                exit 0
-              fi
-
-              echo "Telegram send failed after successful download."
-              exit 1
+              handle_downloaded_file "$file_path" "$height" "$attempt_label"
+              return $?
             fi
 
             echo "DOWNLOAD_FAILED=1"
             echo "ATTEMPT=${attempt_label}"
             echo "HEIGHT=${height}"
+            echo "RC=${rc}"
+
+            return 1
+          }
+
+          try_sorted_download() {
+            local attempt_label="$1"
+            local sort_expr="$2"
+            shift 2
+
+            local extra_args=("$@")
+            local log_file="work/yt-dlp-${attempt_label}.log"
+
+            echo ""
+            echo "=============================="
+            echo "ATTEMPT=${attempt_label}"
+            echo "SORT_EXPR=${sort_expr}"
+            echo "=============================="
+
+            rm -f work/video.*
+
+            set +e
+            python3 -m yt_dlp \
+              --no-playlist \
+              --no-warnings \
+              --geo-bypass \
+              --socket-timeout 10 \
+              --retries 0 \
+              --fragment-retries 0 \
+              --concurrent-fragments "$CONCURRENT_FRAGMENTS" \
+              --merge-output-format mp4 \
+              --remux-video mp4 \
+              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+              --referer "$REFERER_URL" \
+              --add-header "Accept-Language:en-US,en;q=0.9" \
+              --max-filesize 47M \
+              -S "$sort_expr" \
+              -o "work/video.%(ext)s" \
+              "${COOKIES_ARGS[@]}" \
+              "${extra_args[@]}" \
+              "$WORK_URL" > "$log_file" 2>&1
+            local rc=$?
+            set -e
+
+            cat "$log_file"
+
+            if is_dns_failure_log "$log_file"; then
+              echo "DNS_DOWNLOAD_FAILURE=1"
+              echo "DNS failure detected in sorted fallback."
+              return 90
+            fi
+
+            local file_path
+            file_path="$(find work -maxdepth 1 -type f -name "video.*" | head -n 1 || true)"
+
+            if [ "$rc" -eq 0 ] && [ -n "$file_path" ] && [ -f "$file_path" ]; then
+              handle_downloaded_file "$file_path" "sorted" "$attempt_label"
+              return $?
+            fi
+
+            echo "DOWNLOAD_FAILED=1"
+            echo "ATTEMPT=${attempt_label}"
             echo "RC=${rc}"
 
             return 1
@@ -372,49 +482,36 @@ jobs:
 
             if [ "$GENERIC_DNS_FAILED" -ne 1 ]; then
               echo ""
-              echo "=============================="
-              echo "GENERIC_FALLBACK_BEST"
-              echo "=============================="
-
-              rm -f work/video.*
+              echo "GENERIC_SMART_FALLBACK=1"
 
               set +e
-              python3 -m yt_dlp \
-                --no-playlist \
-                --no-warnings \
-                --geo-bypass \
-                --socket-timeout 10 \
-                --retries 0 \
-                --fragment-retries 0 \
-                --concurrent-fragments "$CONCURRENT_FRAGMENTS" \
-                --merge-output-format mp4 \
-                --remux-video mp4 \
-                --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-                --referer "$REFERER_URL" \
-                --add-header "Accept-Language:en-US,en;q=0.9" \
-                --max-filesize 47M \
-                -S "res:${MAX_HEIGHT},ext:mp4:m4a" \
-                -o "work/video.%(ext)s" \
-                "$WORK_URL" > "work/yt-dlp-generic-fallback.log" 2>&1
-              RC=$?
+              try_sorted_download "generic-wide-best" "ext:mp4:m4a"
+              GWB_RC=$?
               set -e
 
-              cat "work/yt-dlp-generic-fallback.log"
+              if [ "$GWB_RC" -eq 90 ]; then
+                echo "DNS failure in generic wide fallback."
+                GENERIC_DNS_FAILED=1
+              fi
+            fi
 
-              if grep -Eqi "Failed to resolve|Address family for hostname not supported|Temporary failure in name resolution|Name or service not known" "work/yt-dlp-generic-fallback.log"; then
-                echo "DNS_DOWNLOAD_FAILURE=1"
-                echo "DNS failure detected in generic fallback."
+            if [ "$GENERIC_DNS_FAILED" -ne 1 ]; then
+              echo ""
+              echo "GENERIC_CAPPED_FALLBACK=1"
+
+              if [ "$AUTO_MODE" = "1" ]; then
+                SORT_EXPR="ext:mp4:m4a"
               else
-                FILE_PATH="$(find work -maxdepth 1 -type f -name "video.*" | head -n 1 || true)"
+                SORT_EXPR="res:${MAX_HEIGHT_NUM},ext:mp4:m4a"
+              fi
 
-                if [ "$RC" -eq 0 ] && [ -n "$FILE_PATH" ] && [ -f "$FILE_PATH" ]; then
-                  if send_to_telegram "$FILE_PATH" "fallback" "generic-fallback"; then
-                    exit 0
-                  fi
+              set +e
+              try_sorted_download "generic-capped-fallback" "$SORT_EXPR"
+              GCF_RC=$?
+              set -e
 
-                  echo "Telegram send failed after generic fallback download."
-                  exit 1
-                fi
+              if [ "$GCF_RC" -eq 90 ]; then
+                echo "DNS failure in generic capped fallback."
               fi
             fi
           fi
