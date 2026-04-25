@@ -67,6 +67,20 @@ jobs:
           CONCURRENT_FRAGMENTS="4"
           LOCAL_BOT_API_STARTED="0"
 
+          progress_stage() {
+            local stage="$1"
+            local percent="$2"
+            local label="$3"
+            local detail="$4"
+
+            echo "PROGRESS_STAGE=${stage}"
+            echo "PROGRESS_PERCENT=${percent}"
+            echo "PROGRESS_LABEL=${label}"
+            echo "PROGRESS_DETAIL=${detail}"
+          }
+
+          progress_stage "preparing" "10" "Preparing" "Preparing_worker"
+
           if [ "$MAX_HEIGHT" = "auto" ]; then
             AUTO_MODE="1"
             MAX_HEIGHT_NUM="2160"
@@ -108,6 +122,9 @@ jobs:
           if [ -n "${TELEGRAM_API_HASH:-}" ]; then
             echo "::add-mask::${TELEGRAM_API_HASH}"
           fi
+
+          progress_stage "validating" "15" "Validating" "Validating_inputs_and_secrets"
+          progress_stage "detecting_platform" "20" "Detecting" "Detecting_media_platform"
 
           WORK_URL="$SOURCE_URL"
           VIDEO_ID=""
@@ -165,6 +182,8 @@ jobs:
           echo "MAX_HEIGHT_NUM=${MAX_HEIGHT_NUM}"
           echo "AUTO_MODE=${AUTO_MODE}"
           echo "REFERER_PLATFORM=${PLATFORM}"
+
+          progress_stage "preparing_cookies" "24" "Preparing" "Preparing_site_cookies"
 
           COOKIES_ARGS=()
 
@@ -228,6 +247,8 @@ jobs:
 
           echo "HEIGHTS=${HEIGHTS}"
 
+          progress_stage "selecting_formats" "28" "Selecting" "Selecting_download_formats"
+
           print_log_safely() {
             local log_file="$1"
 
@@ -259,6 +280,8 @@ jobs:
               echo "ERROR: Normalize input file is empty."
               return 1
             fi
+
+            progress_stage "normalizing" "60" "Processing" "Normalizing_media"
 
             local input_vcodec
             local input_acodec
@@ -330,6 +353,8 @@ jobs:
             echo "OUTPUT_AUDIO_CODEC=${output_acodec:-none}"
             echo "OUTPUT_PIXEL_FORMAT=${output_pix_fmt:-unknown}"
             echo "OUTPUT_SIZE_BYTES=${output_size}"
+
+            progress_stage "normalized" "68" "Processed" "Media_normalized"
 
             return 0
           }
@@ -411,6 +436,8 @@ jobs:
             echo "SIZE_FIT_ORIGINAL_BYTES=${original_size}"
             echo "SIZE_FIT_LIMIT_BYTES=${LOCAL_BOT_API_MAX_BYTES}"
             echo "SIZE_FIT_TARGET_BYTES=${TELEGRAM_TARGET_MAX_BYTES}"
+
+            progress_stage "size_fit" "78" "Reducing" "Reducing_size_to_fit"
 
             local duration_seconds
             local audio_bitrate_bps
@@ -497,6 +524,9 @@ jobs:
                 echo "SIZE_FIT_FINAL_BYTES=${output_size}"
                 echo "SIZE_FIT_FINAL_HEIGHT=${target_height}"
                 echo "SIZE_FIT_AUDIO_MODE=copy"
+
+                progress_stage "size_fit_done" "82" "Reduced" "Size_fit_completed"
+
                 return 0
               fi
 
@@ -526,6 +556,8 @@ jobs:
 
             echo "TELEGRAM_SIZE_CHECK_BYTES=${size_bytes}"
             echo "TELEGRAM_SIZE_LIMIT_BYTES=${LOCAL_BOT_API_MAX_BYTES}"
+
+            progress_stage "size_check" "72" "Checking" "Checking_final_size"
 
             if [ "$size_bytes" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
               echo "TELEGRAM_SIZE_CHECK=ok"
@@ -564,6 +596,8 @@ jobs:
 
             echo "STARTING_LOCAL_BOT_API=1"
 
+            progress_stage "starting_local_bot_api" "85" "Starting_sender" "Starting_Local_Bot_API"
+
             telegram-bot-api \
               --api-id="${TELEGRAM_API_ID}" \
               --api-hash="${TELEGRAM_API_HASH}" \
@@ -582,6 +616,9 @@ jobs:
                 if grep -q '"ok":true' "$response_file"; then
                   echo "LOCAL_BOT_API_READY=1"
                   LOCAL_BOT_API_STARTED="1"
+
+                  progress_stage "local_bot_api_ready" "88" "Sender_ready" "Local_Bot_API_ready"
+
                   return 0
                 fi
               fi
@@ -681,6 +718,21 @@ jobs:
             echo "SELECTED_ATTEMPT=${attempt_label}"
             echo "SELECTED_SIZE_BYTES=${size_bytes}"
 
+            echo "REMOTE_MEDIA_READY=1"
+            echo "READY_TO_SEND=1"
+            echo "READY_SIZE_BYTES=${size_bytes}"
+            echo "READY_HEIGHT=${success_height}"
+            echo "READY_ATTEMPT=${attempt_label}"
+            echo "READY_SEND_MODE=${send_mode}"
+            echo "READY_SEND_METHOD=video"
+
+            progress_stage "ready_to_send" "90" "Ready" "Media_ready_to_send"
+
+            # Give the bot a short window to show the ready summary before Telegram receives the video.
+            sleep 2
+
+            progress_stage "sending" "95" "Sending" "Sending_to_Telegram"
+
             response_file="$RUNNER_TEMP/telegram-response.json"
 
             http_code="$(telegram_send_video_request "$api_base" "$file_path" "$response_file")"
@@ -691,12 +743,17 @@ jobs:
               echo "TELEGRAM_SEND=success"
               echo "TELEGRAM_SEND_METHOD=video"
               echo "FINAL_RESULT=success"
+
+              progress_stage "sent" "98" "Finalizing" "Telegram_send_completed"
+
               return 0
             fi
 
             if [ "$send_mode" = "local" ]; then
               echo "LOCAL_SEND_VIDEO_FAILED=1"
               echo "TRY_SEND_DOCUMENT_FALLBACK=1"
+
+              progress_stage "sending_fallback" "95" "Sending" "Sending_as_document_fallback"
 
               response_file="$RUNNER_TEMP/telegram-document-response.json"
               http_code="$(telegram_send_document_request "$api_base" "$file_path" "$response_file")"
@@ -707,6 +764,9 @@ jobs:
                 echo "TELEGRAM_SEND=success"
                 echo "TELEGRAM_SEND_METHOD=document"
                 echo "FINAL_RESULT=success"
+
+                progress_stage "sent" "98" "Finalizing" "Telegram_send_completed"
+
                 return 0
               fi
             fi
@@ -746,6 +806,8 @@ jobs:
             echo "DOWNLOAD_SUCCESS_ATTEMPT=${attempt_label}"
             echo "DOWNLOAD_SIZE_BYTES=${size_bytes}"
 
+            progress_stage "downloaded" "50" "Downloaded" "Download_completed"
+
             timestamp="$(TZ=Africa/Cairo date '+%Y-%m-%d_%H-%M-%S')"
             file_ext="${file_path##*.}"
 
@@ -761,6 +823,8 @@ jobs:
 
             echo "RENAMED_FILE=${file_path}"
 
+            progress_stage "normalizing" "60" "Processing" "Normalizing_media"
+
             normalize_media_for_sharing "$file_path" "$final_file"
             local normalize_rc=$?
 
@@ -773,6 +837,8 @@ jobs:
             file_path="$final_file"
 
             echo "NORMALIZED_FILE=${file_path}"
+
+            progress_stage "normalized" "68" "Processed" "Media_normalized"
 
             ensure_media_fits_telegram_limit "$file_path"
             local fit_rc=$?
@@ -815,6 +881,8 @@ jobs:
             echo "TRY_HEIGHT=${height}"
             echo "FORMAT_SELECTOR=${format_selector}"
             echo "=============================="
+
+            progress_stage "downloading" "40" "Downloading" "Downloading_media"
 
             rm -f work/video.*
 
@@ -879,6 +947,8 @@ jobs:
             echo "SORT_EXPR=${sort_expr}"
             echo "=============================="
 
+            progress_stage "downloading" "40" "Downloading" "Downloading_media"
+
             rm -f work/video.*
 
             python3 -m yt_dlp \
@@ -928,6 +998,8 @@ jobs:
           if [ "$IS_YOUTUBE" = "1" ]; then
             echo "MODE=youtube"
 
+            progress_stage "extracting" "30" "Extracting" "Extracting_YouTube_media_info"
+
             for CLIENT in default tv web_safari; do
               EXTRA_ARGS=()
 
@@ -964,6 +1036,8 @@ jobs:
             done
           else
             echo "MODE=generic"
+
+            progress_stage "extracting" "30" "Extracting" "Extracting_media_info"
 
             generic_format_part_for_height() {
               local height="$1"
@@ -1064,6 +1138,8 @@ jobs:
               fi
             fi
           fi
+
+          progress_stage "failed" "100" "Failed" "No_working_download_method_succeeded"
 
           echo "FINAL_RESULT=failed"
           echo "No working download method succeeded."
