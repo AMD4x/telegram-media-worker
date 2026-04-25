@@ -45,6 +45,7 @@ jobs:
       - name: Download and send to Telegram
         env:
           YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
+          FACEBOOK_COOKIES_TXT: ${{ secrets.FACEBOOK_COOKIES_TXT }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
@@ -93,6 +94,7 @@ jobs:
           VIDEO_ID=""
           PLATFORM="generic"
           IS_YOUTUBE="0"
+          IS_FACEBOOK="0"
           REFERER_URL="https://www.google.com/"
 
           LOWER_URL="$(printf "%s" "$SOURCE_URL" | tr "[:upper:]" "[:lower:]")"
@@ -115,6 +117,7 @@ jobs:
             fi
           elif echo "$LOWER_URL" | grep -Eq "(facebook\.com|fb\.watch)"; then
             PLATFORM="facebook"
+            IS_FACEBOOK="1"
             REFERER_URL="https://www.facebook.com/"
           elif echo "$LOWER_URL" | grep -Eq "(instagram\.com)"; then
             PLATFORM="instagram"
@@ -148,7 +151,7 @@ jobs:
 
             COOKIE_BYTES="$(wc -c < "$COOKIES_FILE" | tr -d ' ')"
             COOKIE_LINES="$(wc -l < "$COOKIES_FILE" | tr -d ' ')"
-            COOKIE_YOUTUBE_LINES="$(grep -Ei 'youtube\.com|google\.com|accounts\.google\.com' "$COOKIES_FILE" | wc -l | tr -d ' ')"
+            COOKIE_DOMAIN_LINES="$(grep -Ei 'youtube\.com|google\.com|accounts\.google\.com' "$COOKIES_FILE" | wc -l | tr -d ' ')"
             COOKIE_HAS_NETSCAPE="$(grep -E '^# Netscape HTTP Cookie File' "$COOKIES_FILE" >/dev/null 2>&1 && echo yes || echo no)"
 
             COOKIES_ARGS=(--cookies "$COOKIES_FILE")
@@ -156,10 +159,34 @@ jobs:
             echo "YOUTUBE_COOKIES=enabled"
             echo "COOKIE_BYTES=${COOKIE_BYTES}"
             echo "COOKIE_LINES=${COOKIE_LINES}"
-            echo "COOKIE_YOUTUBE_OR_GOOGLE_LINES=${COOKIE_YOUTUBE_LINES}"
+            echo "COOKIE_YOUTUBE_OR_GOOGLE_LINES=${COOKIE_DOMAIN_LINES}"
+            echo "COOKIE_HAS_NETSCAPE_HEADER=${COOKIE_HAS_NETSCAPE}"
+          elif [ "$IS_FACEBOOK" = "1" ] && [ -n "${FACEBOOK_COOKIES_TXT:-}" ]; then
+            COOKIES_FILE="$RUNNER_TEMP/facebook-cookies.txt"
+            umask 077
+            printf '%s\n' "$FACEBOOK_COOKIES_TXT" > "$COOKIES_FILE"
+            sed -i 's/\r$//' "$COOKIES_FILE"
+
+            COOKIE_BYTES="$(wc -c < "$COOKIES_FILE" | tr -d ' ')"
+            COOKIE_LINES="$(wc -l < "$COOKIES_FILE" | tr -d ' ')"
+            COOKIE_DOMAIN_LINES="$(grep -Ei 'facebook\.com|fbcdn\.net|messenger\.com' "$COOKIES_FILE" | wc -l | tr -d ' ')"
+            COOKIE_HAS_NETSCAPE="$(grep -E '^# Netscape HTTP Cookie File' "$COOKIES_FILE" >/dev/null 2>&1 && echo yes || echo no)"
+
+            COOKIES_ARGS=(--cookies "$COOKIES_FILE")
+
+            echo "FACEBOOK_COOKIES=enabled"
+            echo "COOKIE_BYTES=${COOKIE_BYTES}"
+            echo "COOKIE_LINES=${COOKIE_LINES}"
+            echo "COOKIE_FACEBOOK_LINES=${COOKIE_DOMAIN_LINES}"
             echo "COOKIE_HAS_NETSCAPE_HEADER=${COOKIE_HAS_NETSCAPE}"
           else
-            echo "YOUTUBE_COOKIES=disabled"
+            if [ "$IS_YOUTUBE" = "1" ]; then
+              echo "YOUTUBE_COOKIES=disabled"
+            elif [ "$IS_FACEBOOK" = "1" ]; then
+              echo "FACEBOOK_COOKIES=disabled"
+            else
+              echo "SITE_COOKIES=disabled"
+            fi
           fi
 
           HEIGHTS=""
