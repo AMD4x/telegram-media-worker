@@ -258,11 +258,10 @@ jobs:
             python3 -m yt_dlp \
               --no-playlist \
               --no-warnings \
-              --force-ipv4 \
               --geo-bypass \
-              --socket-timeout 20 \
-              --retries 1 \
-              --fragment-retries 1 \
+              --socket-timeout 10 \
+              --retries 0 \
+              --fragment-retries 0 \
               --concurrent-fragments "$CONCURRENT_FRAGMENTS" \
               --merge-output-format mp4 \
               --remux-video mp4 \
@@ -279,6 +278,12 @@ jobs:
             set -e
 
             cat "work/yt-dlp-${attempt_label}-${height}.log"
+
+            if grep -Eqi "Failed to resolve|Address family for hostname not supported|Temporary failure in name resolution|Name or service not known" "work/yt-dlp-${attempt_label}-${height}.log"; then
+              echo "DNS_DOWNLOAD_FAILURE=1"
+              echo "DNS failure detected. Skipping remaining heights for this client."
+              return 90
+            fi
 
             local file_path
             file_path="$(find work -maxdepth 1 -type f -name "video.*" | head -n 1 || true)"
@@ -333,57 +338,84 @@ jobs:
 
               for HEIGHT in $HEIGHTS; do
                 FORMAT_SELECTOR="bv*[ext=mp4][vcodec^=avc1][height<=${HEIGHT}]+ba[ext=m4a]/bv*[ext=mp4][height<=${HEIGHT}]+ba[ext=m4a]/b[ext=mp4][height<=${HEIGHT}]/bv*[height<=${HEIGHT}]+ba/b[height<=${HEIGHT}]/b/best"
-                try_download "$ATTEMPT_LABEL" "$HEIGHT" "$FORMAT_SELECTOR" "${EXTRA_ARGS[@]}" || true
+
+                set +e
+                try_download "$ATTEMPT_LABEL" "$HEIGHT" "$FORMAT_SELECTOR" "${EXTRA_ARGS[@]}"
+                TRY_RC=$?
+                set -e
+
+                if [ "$TRY_RC" -eq 90 ]; then
+                  echo "DNS failure for ${CLIENT}. Moving to next YouTube client."
+                  break
+                fi
               done
             done
           else
             echo "MODE=generic"
 
+            GENERIC_DNS_FAILED=0
+
             for HEIGHT in $HEIGHTS; do
               FORMAT_SELECTOR="bestvideo[ext=mp4][height<=${HEIGHT}]+bestaudio[ext=m4a]/best[ext=mp4][height<=${HEIGHT}]/bestvideo[height<=${HEIGHT}]+bestaudio/best[height<=${HEIGHT}]/bestvideo+bestaudio/best"
-              try_download "generic-primary" "$HEIGHT" "$FORMAT_SELECTOR" || true
+
+              set +e
+              try_download "generic-primary" "$HEIGHT" "$FORMAT_SELECTOR"
+              TRY_RC=$?
+              set -e
+
+              if [ "$TRY_RC" -eq 90 ]; then
+                echo "DNS failure in generic primary. Skipping remaining generic heights."
+                GENERIC_DNS_FAILED=1
+                break
+              fi
             done
 
-            echo ""
-            echo "=============================="
-            echo "GENERIC_FALLBACK_BEST"
-            echo "=============================="
+            if [ "$GENERIC_DNS_FAILED" -ne 1 ]; then
+              echo ""
+              echo "=============================="
+              echo "GENERIC_FALLBACK_BEST"
+              echo "=============================="
 
-            rm -f work/video.*
+              rm -f work/video.*
 
-            set +e
-            python3 -m yt_dlp \
-              --no-playlist \
-              --no-warnings \
-              --force-ipv4 \
-              --geo-bypass \
-              --socket-timeout 20 \
-              --retries 1 \
-              --fragment-retries 1 \
-              --concurrent-fragments "$CONCURRENT_FRAGMENTS" \
-              --merge-output-format mp4 \
-              --remux-video mp4 \
-              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-              --referer "$REFERER_URL" \
-              --add-header "Accept-Language:en-US,en;q=0.9" \
-              --max-filesize 47M \
-              -S "res:${MAX_HEIGHT},ext:mp4:m4a" \
-              -o "work/video.%(ext)s" \
-              "$WORK_URL" > "work/yt-dlp-generic-fallback.log" 2>&1
-            RC=$?
-            set -e
+              set +e
+              python3 -m yt_dlp \
+                --no-playlist \
+                --no-warnings \
+                --geo-bypass \
+                --socket-timeout 10 \
+                --retries 0 \
+                --fragment-retries 0 \
+                --concurrent-fragments "$CONCURRENT_FRAGMENTS" \
+                --merge-output-format mp4 \
+                --remux-video mp4 \
+                --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+                --referer "$REFERER_URL" \
+                --add-header "Accept-Language:en-US,en;q=0.9" \
+                --max-filesize 47M \
+                -S "res:${MAX_HEIGHT},ext:mp4:m4a" \
+                -o "work/video.%(ext)s" \
+                "$WORK_URL" > "work/yt-dlp-generic-fallback.log" 2>&1
+              RC=$?
+              set -e
 
-            cat "work/yt-dlp-generic-fallback.log"
+              cat "work/yt-dlp-generic-fallback.log"
 
-            FILE_PATH="$(find work -maxdepth 1 -type f -name "video.*" | head -n 1 || true)"
+              if grep -Eqi "Failed to resolve|Address family for hostname not supported|Temporary failure in name resolution|Name or service not known" "work/yt-dlp-generic-fallback.log"; then
+                echo "DNS_DOWNLOAD_FAILURE=1"
+                echo "DNS failure detected in generic fallback."
+              else
+                FILE_PATH="$(find work -maxdepth 1 -type f -name "video.*" | head -n 1 || true)"
 
-            if [ "$RC" -eq 0 ] && [ -n "$FILE_PATH" ] && [ -f "$FILE_PATH" ]; then
-              if send_to_telegram "$FILE_PATH" "fallback" "generic-fallback"; then
-                exit 0
+                if [ "$RC" -eq 0 ] && [ -n "$FILE_PATH" ] && [ -f "$FILE_PATH" ]; then
+                  if send_to_telegram "$FILE_PATH" "fallback" "generic-fallback"; then
+                    exit 0
+                  fi
+
+                  echo "Telegram send failed after generic fallback download."
+                  exit 1
+                fi
               fi
-
-              echo "Telegram send failed after generic fallback download."
-              exit 1
             fi
           fi
 
