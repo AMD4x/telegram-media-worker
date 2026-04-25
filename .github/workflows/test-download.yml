@@ -20,34 +20,28 @@ on:
           - "480"
           - "360"
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   download_and_send:
     name: Download and send first success
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
+
+    container:
+      image: ghcr.io/ad4x/tg-video-worker:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
-      - name: Install tools
-        run: |
-          set -e
-
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg ca-certificates curl
-
-          python3 -m pip install --user --no-cache-dir --upgrade pip
-          python3 -m pip install --user --no-cache-dir --upgrade --pre "yt-dlp[default]"
-
-          echo "yt-dlp version:"
-          python3 -m yt_dlp --version
-
-          echo "Node version:"
-          node --version || true
-
-          echo "ffmpeg version:"
-          ffmpeg -version | head -n 1
-
       - name: Download and send to Telegram
-        shell: bash
         env:
           YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -61,6 +55,15 @@ jobs:
           MAX_HEIGHT="${{ inputs.max_height }}"
           MAX_FILE_BYTES="50000000"
           CONCURRENT_FRAGMENTS="4"
+
+          echo "yt-dlp version:"
+          python3 -m yt_dlp --version
+
+          echo "Node version:"
+          node --version || true
+
+          echo "ffmpeg version:"
+          ffmpeg -version | head -n 1
 
           if [ -z "$SOURCE_URL" ]; then
             echo "ERROR: Missing media_url."
@@ -329,7 +332,7 @@ jobs:
               echo "YOUTUBE_CLIENT=${CLIENT}"
 
               for HEIGHT in $HEIGHTS; do
-                FORMAT_SELECTOR="bv*[height<=${HEIGHT}]+ba/b[height<=${HEIGHT}]/b/best"
+                FORMAT_SELECTOR="bv*[ext=mp4][vcodec^=avc1][height<=${HEIGHT}]+ba[ext=m4a]/bv*[ext=mp4][height<=${HEIGHT}]+ba[ext=m4a]/b[ext=mp4][height<=${HEIGHT}]/bv*[height<=${HEIGHT}]+ba/b[height<=${HEIGHT}]/b/best"
                 try_download "$ATTEMPT_LABEL" "$HEIGHT" "$FORMAT_SELECTOR" "${EXTRA_ARGS[@]}" || true
               done
             done
@@ -337,7 +340,7 @@ jobs:
             echo "MODE=generic"
 
             for HEIGHT in $HEIGHTS; do
-              FORMAT_SELECTOR="bestvideo[height<=${HEIGHT}]+bestaudio/best[height<=${HEIGHT}]/bestvideo+bestaudio/best"
+              FORMAT_SELECTOR="bestvideo[ext=mp4][height<=${HEIGHT}]+bestaudio[ext=m4a]/best[ext=mp4][height<=${HEIGHT}]/bestvideo[height<=${HEIGHT}]+bestaudio/best[height<=${HEIGHT}]/bestvideo+bestaudio/best"
               try_download "generic-primary" "$HEIGHT" "$FORMAT_SELECTOR" || true
             done
 
