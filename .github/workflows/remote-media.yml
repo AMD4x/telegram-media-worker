@@ -29,7 +29,7 @@ jobs:
   download_and_send:
     name: Download and send first success
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 360
 
     container:
       image: ghcr.io/ad4x/tg-video-worker:latest
