@@ -2,6 +2,16 @@ name: Build Worker Image
 
 on:
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: "Force rebuild even if versions did not change"
+        required: false
+        default: false
+        type: boolean
+
+  schedule:
+    - cron: "17 2 * * *"
+
   push:
     branches:
       - main
@@ -13,14 +23,216 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: build-worker-image
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ghcr.io/ad4x/tg-video-worker:latest
+
 jobs:
-  build_image:
-    name: Build and push GHCR image
+  check_versions:
+    name: Check whether image needs rebuild
     runs-on: ubuntu-latest
+
+    outputs:
+      should_build: ${{ steps.decide.outputs.should_build }}
+      current_ytdlp: ${{ steps.decide.outputs.current_ytdlp }}
+      latest_ytdlp: ${{ steps.decide.outputs.latest_ytdlp }}
+      current_deno: ${{ steps.decide.outputs.current_deno }}
+      latest_deno: ${{ steps.decide.outputs.latest_deno }}
+      build_reasons: ${{ steps.decide.outputs.build_reasons }}
+
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide if rebuild is needed
+        id: decide
+        shell: bash
+        env:
+          GH_TOKEN_FOR_API: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'false' }}
+        run: |
+          set -e
+
+          IMAGE_NAME="${IMAGE_NAME}"
+          SHOULD_BUILD=0
+          IMAGE_EXISTS=0
+          REASONS=()
+
+          echo "IMAGE_NAME=${IMAGE_NAME}"
+          echo "EVENT_NAME=${GITHUB_EVENT_NAME}"
+          echo "FORCE_REBUILD=${FORCE_REBUILD}"
+
+          python3 -m pip install --user --quiet --upgrade packaging
+
+          echo ""
+          echo "Checking latest yt-dlp version from PyPI..."
+          LATEST_YTDLP="$(
+            python3 - <<'PY'
+          import json
+          import urllib.request
+          from packaging.version import Version
+
+          url = "https://pypi.org/pypi/yt-dlp/json"
+
+          with urllib.request.urlopen(url, timeout=30) as response:
+              data = json.load(response)
+
+          versions = []
+
+          for raw_version, files in data.get("releases", {}).items():
+              if not files:
+                  continue
+
+              if any(not item.get("yanked", False) for item in files):
+                  versions.append(Version(raw_version))
+
+          if not versions:
+              raise SystemExit("No valid yt-dlp versions found on PyPI")
+
+          print(max(versions))
+          PY
+          )"
+
+          echo "LATEST_YTDLP=${LATEST_YTDLP}"
+
+          echo ""
+          echo "Checking latest Deno release from GitHub..."
+          LATEST_DENO="$(
+            curl -fsSL \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN_FOR_API}" \
+              "https://api.github.com/repos/denoland/deno/releases/latest" \
+            | python3 - <<'PY'
+          import json
+          import sys
+
+          data = json.load(sys.stdin)
+          tag = data.get("tag_name", "").strip()
+
+          if not tag:
+              raise SystemExit("No Deno latest tag found")
+
+          print(tag.lstrip("v"))
+          PY
+          )"
+
+          echo "LATEST_DENO=${LATEST_DENO}"
+
+          echo ""
+          echo "Trying to pull current image..."
+          if docker pull "${IMAGE_NAME}" >/tmp/docker-pull.log 2>&1; then
+            IMAGE_EXISTS=1
+            echo "IMAGE_EXISTS=1"
+          else
+            IMAGE_EXISTS=0
+            echo "IMAGE_EXISTS=0"
+            cat /tmp/docker-pull.log || true
+          fi
+
+          CURRENT_YTDLP=""
+          CURRENT_DENO=""
+
+          if [ "$IMAGE_EXISTS" -eq 1 ]; then
+            echo ""
+            echo "Reading current versions from image..."
+
+            CURRENT_YTDLP="$(
+              docker run --rm "${IMAGE_NAME}" \
+                python3 -m yt_dlp --version 2>/dev/null \
+              | head -n 1 \
+              | tr -d '\r' \
+              || true
+            )"
+
+            CURRENT_DENO="$(
+              docker run --rm "${IMAGE_NAME}" \
+                sh -lc 'deno --version | sed -n "1s/^deno //p"' 2>/dev/null \
+              | head -n 1 \
+              | tr -d '\r' \
+              || true
+            )"
+          fi
+
+          echo "CURRENT_YTDLP=${CURRENT_YTDLP}"
+          echo "CURRENT_DENO=${CURRENT_DENO}"
+
+          if [ "${FORCE_REBUILD}" = "true" ]; then
+            SHOULD_BUILD=1
+            REASONS+=("manual force_rebuild=true")
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            SHOULD_BUILD=1
+            REASONS+=("Dockerfile or build workflow changed")
+          fi
+
+          if [ "$IMAGE_EXISTS" -ne 1 ]; then
+            SHOULD_BUILD=1
+            REASONS+=("image does not exist or cannot be pulled")
+          fi
+
+          if [ -z "$CURRENT_YTDLP" ]; then
+            SHOULD_BUILD=1
+            REASONS+=("current yt-dlp version missing")
+          elif [ "$CURRENT_YTDLP" != "$LATEST_YTDLP" ]; then
+            SHOULD_BUILD=1
+            REASONS+=("yt-dlp ${CURRENT_YTDLP} -> ${LATEST_YTDLP}")
+          fi
+
+          if [ -z "$CURRENT_DENO" ]; then
+            SHOULD_BUILD=1
+            REASONS+=("current Deno version missing")
+          elif [ "$CURRENT_DENO" != "$LATEST_DENO" ]; then
+            SHOULD_BUILD=1
+            REASONS+=("Deno ${CURRENT_DENO} -> ${LATEST_DENO}")
+          fi
+
+          if [ "$SHOULD_BUILD" -eq 1 ]; then
+            echo ""
+            echo "BUILD_DECISION=build"
+          else
+            echo ""
+            echo "BUILD_DECISION=skip"
+            REASONS+=("yt-dlp and Deno are already up to date")
+          fi
+
+          BUILD_REASONS="$(IFS='; '; echo "${REASONS[*]}")"
+
+          echo "BUILD_REASONS=${BUILD_REASONS}"
+
+          {
+            echo "should_build=${SHOULD_BUILD}"
+            echo "current_ytdlp=${CURRENT_YTDLP}"
+            echo "latest_ytdlp=${LATEST_YTDLP}"
+            echo "current_deno=${CURRENT_DENO}"
+            echo "latest_deno=${LATEST_DENO}"
+            echo "build_reasons=${BUILD_REASONS}"
+          } >> "$GITHUB_OUTPUT"
+
+  build_image:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    needs: check_versions
+    if: needs.check_versions.outputs.should_build == '1'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Show rebuild reason
+        run: |
+          echo "Current yt-dlp: ${{ needs.check_versions.outputs.current_ytdlp }}"
+          echo "Latest yt-dlp:  ${{ needs.check_versions.outputs.latest_ytdlp }}"
+          echo "Current Deno:   ${{ needs.check_versions.outputs.current_deno }}"
+          echo "Latest Deno:    ${{ needs.check_versions.outputs.latest_deno }}"
+          echo "Reasons:        ${{ needs.check_versions.outputs.build_reasons }}"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -34,6 +246,24 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          pull: true
           push: true
           tags: |
             ghcr.io/ad4x/tg-video-worker:latest
+            ghcr.io/ad4x/tg-video-worker:${{ github.run_number }}
+
+  skip_summary:
+    name: Skip summary
+    runs-on: ubuntu-latest
+    needs: check_versions
+    if: needs.check_versions.outputs.should_build != '1'
+
+    steps:
+      - name: Show skip reason
+        run: |
+          echo "No rebuild needed."
+          echo "Current yt-dlp: ${{ needs.check_versions.outputs.current_ytdlp }}"
+          echo "Latest yt-dlp:  ${{ needs.check_versions.outputs.latest_ytdlp }}"
+          echo "Current Deno:   ${{ needs.check_versions.outputs.current_deno }}"
+          echo "Latest Deno:    ${{ needs.check_versions.outputs.latest_deno }}"
+          echo "Reasons:        ${{ needs.check_versions.outputs.build_reasons }}"
