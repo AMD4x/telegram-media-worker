@@ -44,6 +44,8 @@ jobs:
       should_build: ${{ steps.decide.outputs.should_build }}
       current_ytdlp: ${{ steps.decide.outputs.current_ytdlp }}
       latest_ytdlp: ${{ steps.decide.outputs.latest_ytdlp }}
+      current_ytdlp_base: ${{ steps.decide.outputs.current_ytdlp_base }}
+      latest_ytdlp_base: ${{ steps.decide.outputs.latest_ytdlp_base }}
       current_deno: ${{ steps.decide.outputs.current_deno }}
       latest_deno: ${{ steps.decide.outputs.latest_deno }}
       build_reasons: ${{ steps.decide.outputs.build_reasons }}
@@ -79,6 +81,27 @@ jobs:
 
           python3 -m pip install --user --quiet --upgrade packaging
 
+          normalize_version_base() {
+            local raw="$1"
+
+            if [ -z "$raw" ]; then
+              echo ""
+              return 0
+            fi
+
+            python3 - "$raw" <<'PY'
+          import sys
+          from packaging.version import Version, InvalidVersion
+
+          raw = sys.argv[1].strip()
+
+          try:
+              print(Version(raw).base_version)
+          except InvalidVersion:
+              print(raw)
+          PY
+          }
+
           echo ""
           echo "Checking latest yt-dlp version from PyPI..."
           LATEST_YTDLP="$(
@@ -108,7 +131,10 @@ jobs:
           PY
           )"
 
+          LATEST_YTDLP_BASE="$(normalize_version_base "$LATEST_YTDLP")"
+
           echo "LATEST_YTDLP=${LATEST_YTDLP}"
+          echo "LATEST_YTDLP_BASE=${LATEST_YTDLP_BASE}"
 
           echo ""
           echo "Checking latest Deno release from GitHub..."
@@ -156,6 +182,7 @@ jobs:
           fi
 
           CURRENT_YTDLP=""
+          CURRENT_YTDLP_BASE=""
           CURRENT_DENO=""
 
           if [ "$IMAGE_EXISTS" -eq 1 ]; then
@@ -170,6 +197,8 @@ jobs:
               || true
             )"
 
+            CURRENT_YTDLP_BASE="$(normalize_version_base "$CURRENT_YTDLP")"
+
             CURRENT_DENO="$(
               docker run --rm "${IMAGE_NAME}" \
                 sh -lc 'deno --version | sed -n "1s/^deno //p"' 2>/dev/null \
@@ -180,6 +209,7 @@ jobs:
           fi
 
           echo "CURRENT_YTDLP=${CURRENT_YTDLP}"
+          echo "CURRENT_YTDLP_BASE=${CURRENT_YTDLP_BASE}"
           echo "CURRENT_DENO=${CURRENT_DENO}"
 
           if [ "${FORCE_REBUILD}" = "true" ]; then
@@ -205,9 +235,9 @@ jobs:
           if [ -z "$CURRENT_YTDLP" ]; then
             SHOULD_BUILD=1
             REASONS+=("current yt-dlp version missing")
-          elif [ "$CURRENT_YTDLP" != "$LATEST_YTDLP" ]; then
+          elif [ "$CURRENT_YTDLP_BASE" != "$LATEST_YTDLP_BASE" ]; then
             SHOULD_BUILD=1
-            REASONS+=("yt-dlp ${CURRENT_YTDLP} -> ${LATEST_YTDLP}")
+            REASONS+=("yt-dlp ${CURRENT_YTDLP} (${CURRENT_YTDLP_BASE}) -> ${LATEST_YTDLP} (${LATEST_YTDLP_BASE})")
           fi
 
           if [ -z "$CURRENT_DENO" ]; then
@@ -235,6 +265,8 @@ jobs:
             echo "should_build=${SHOULD_BUILD}"
             echo "current_ytdlp=${CURRENT_YTDLP}"
             echo "latest_ytdlp=${LATEST_YTDLP}"
+            echo "current_ytdlp_base=${CURRENT_YTDLP_BASE}"
+            echo "latest_ytdlp_base=${LATEST_YTDLP_BASE}"
             echo "current_deno=${CURRENT_DENO}"
             echo "latest_deno=${LATEST_DENO}"
             echo "build_reasons=${BUILD_REASONS}"
@@ -252,11 +284,13 @@ jobs:
 
       - name: Show rebuild reason
         run: |
-          echo "Current yt-dlp: ${{ needs.check_versions.outputs.current_ytdlp }}"
-          echo "Latest yt-dlp:  ${{ needs.check_versions.outputs.latest_ytdlp }}"
-          echo "Current Deno:   ${{ needs.check_versions.outputs.current_deno }}"
-          echo "Latest Deno:    ${{ needs.check_versions.outputs.latest_deno }}"
-          echo "Reasons:        ${{ needs.check_versions.outputs.build_reasons }}"
+          echo "Current yt-dlp:      ${{ needs.check_versions.outputs.current_ytdlp }}"
+          echo "Latest yt-dlp:       ${{ needs.check_versions.outputs.latest_ytdlp }}"
+          echo "Current yt-dlp base: ${{ needs.check_versions.outputs.current_ytdlp_base }}"
+          echo "Latest yt-dlp base:  ${{ needs.check_versions.outputs.latest_ytdlp_base }}"
+          echo "Current Deno:        ${{ needs.check_versions.outputs.current_deno }}"
+          echo "Latest Deno:         ${{ needs.check_versions.outputs.latest_deno }}"
+          echo "Reasons:             ${{ needs.check_versions.outputs.build_reasons }}"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -286,8 +320,10 @@ jobs:
       - name: Show skip reason
         run: |
           echo "No rebuild needed."
-          echo "Current yt-dlp: ${{ needs.check_versions.outputs.current_ytdlp }}"
-          echo "Latest yt-dlp:  ${{ needs.check_versions.outputs.latest_ytdlp }}"
-          echo "Current Deno:   ${{ needs.check_versions.outputs.current_deno }}"
-          echo "Latest Deno:    ${{ needs.check_versions.outputs.latest_deno }}"
-          echo "Reasons:        ${{ needs.check_versions.outputs.build_reasons }}"
+          echo "Current yt-dlp:      ${{ needs.check_versions.outputs.current_ytdlp }}"
+          echo "Latest yt-dlp:       ${{ needs.check_versions.outputs.latest_ytdlp }}"
+          echo "Current yt-dlp base: ${{ needs.check_versions.outputs.current_ytdlp_base }}"
+          echo "Latest yt-dlp base:  ${{ needs.check_versions.outputs.latest_ytdlp_base }}"
+          echo "Current Deno:        ${{ needs.check_versions.outputs.current_deno }}"
+          echo "Latest Deno:         ${{ needs.check_versions.outputs.latest_deno }}"
+          echo "Reasons:             ${{ needs.check_versions.outputs.build_reasons }}"
