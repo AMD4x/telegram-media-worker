@@ -59,8 +59,8 @@ jobs:
           echo "yt-dlp version:"
           python3 -m yt_dlp --version
 
-          echo "Node version:"
-          node --version || true
+          echo "Deno version:"
+          deno --version || true
 
           echo "ffmpeg version:"
           ffmpeg -version | head -n 1
@@ -312,18 +312,18 @@ jobs:
             echo "MODE=youtube"
 
             for CLIENT in default tv web_safari; do
-              EXTRA_ARGS=(--js-runtimes node)
+              EXTRA_ARGS=()
 
               case "$CLIENT" in
                 default)
-                  ATTEMPT_LABEL="youtube-default-node"
+                  ATTEMPT_LABEL="youtube-default-deno"
                   ;;
                 tv)
-                  ATTEMPT_LABEL="youtube-tv-node"
+                  ATTEMPT_LABEL="youtube-tv-deno"
                   EXTRA_ARGS+=(--extractor-args "youtube:player_client=tv")
                   ;;
                 web_safari)
-                  ATTEMPT_LABEL="youtube-web-safari-node"
+                  ATTEMPT_LABEL="youtube-web-safari-deno"
                   EXTRA_ARGS+=(--extractor-args "youtube:player_client=web_safari")
                   ;;
               esac
