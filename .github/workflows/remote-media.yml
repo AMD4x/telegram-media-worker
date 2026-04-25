@@ -958,7 +958,10 @@ jobs:
               echo "TELEGRAM_SEND_METHOD=video"
               echo "FINAL_RESULT=success"
 
-              progress_stage "sent" "98" "Finalizing" "Telegram_send_completed"
+              echo "PROGRESS_STAGE=sent"
+              echo "PROGRESS_PERCENT=98"
+              echo "PROGRESS_LABEL=Finalizing"
+              echo "PROGRESS_DETAIL=Telegram_send_completed"
 
               telegram_edit_summary \
                 "✅ <b>GitHub Remote completed</b>" \
@@ -987,7 +990,10 @@ jobs:
                 echo "TELEGRAM_SEND_METHOD=document"
                 echo "FINAL_RESULT=success"
 
-                progress_stage "sent" "98" "Finalizing" "Telegram_send_completed"
+                echo "PROGRESS_STAGE=sent"
+                echo "PROGRESS_PERCENT=98"
+                echo "PROGRESS_LABEL=Finalizing"
+                echo "PROGRESS_DETAIL=Telegram_send_completed"
 
                 telegram_edit_summary \
                   "✅ <b>GitHub Remote completed</b>" \
