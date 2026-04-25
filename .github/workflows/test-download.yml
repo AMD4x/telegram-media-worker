@@ -35,12 +35,15 @@ jobs:
       - name: Install tools
         run: |
           set -e
+
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          sudo apt-get install -y --no-install-recommends ffmpeg ca-certificates
           python3 -m pip install --user --no-cache-dir yt-dlp
 
       - name: Download media
         shell: bash
+        env:
+          YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
         run: |
           set -e
 
@@ -52,21 +55,32 @@ jobs:
           MAX_FILE_BYTES="50000000"
           CONCURRENT_FRAGMENTS="4"
 
+          STATUS_FILE="work/status-${SLOT}.txt"
+
+          {
+            echo "SLOT=${SLOT}"
+            echo "MAX_HEIGHT=${MAX_HEIGHT}"
+          } > "$STATUS_FILE"
+
           if [ -z "$SOURCE_URL" ]; then
             echo "Missing media_url."
-            exit 1
+            echo "RESULT=failed" >> "$STATUS_FILE"
+            echo "REASON=missing_media_url" >> "$STATUS_FILE"
+            exit 0
           fi
 
           WORK_URL="$SOURCE_URL"
           VIDEO_ID=""
           PLATFORM="generic"
           IS_YOUTUBE="0"
+          REFERER_URL="https://www.google.com/"
 
           LOWER_URL="$(printf "%s" "$SOURCE_URL" | tr "[:upper:]" "[:lower:]")"
 
           if echo "$LOWER_URL" | grep -Eq "(youtube\.com|youtu\.be)"; then
             PLATFORM="youtube"
             IS_YOUTUBE="1"
+            REFERER_URL="https://www.youtube.com/"
 
             if echo "$SOURCE_URL" | grep -Eq "youtube\.com/shorts/[A-Za-z0-9_-]+"; then
               VIDEO_ID="$(echo "$SOURCE_URL" | sed -nE 's#.*youtube\.com/shorts/([A-Za-z0-9_-]+).*#\1#p')"
@@ -81,14 +95,19 @@ jobs:
             fi
           elif echo "$LOWER_URL" | grep -Eq "(facebook\.com|fb\.watch)"; then
             PLATFORM="facebook"
+            REFERER_URL="https://www.facebook.com/"
           elif echo "$LOWER_URL" | grep -Eq "(instagram\.com)"; then
             PLATFORM="instagram"
+            REFERER_URL="https://www.instagram.com/"
           elif echo "$LOWER_URL" | grep -Eq "(tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com)"; then
             PLATFORM="tiktok"
+            REFERER_URL="https://www.tiktok.com/"
           elif echo "$LOWER_URL" | grep -Eq "(twitter\.com|x\.com)"; then
             PLATFORM="x"
+            REFERER_URL="https://x.com/"
           elif echo "$LOWER_URL" | grep -Eq "(reddit\.com|redd\.it)"; then
             PLATFORM="reddit"
+            REFERER_URL="https://www.reddit.com/"
           fi
 
           echo "SLOT=$SLOT"
@@ -96,11 +115,48 @@ jobs:
           echo "ORIGINAL_URL=$SOURCE_URL"
           echo "NORMALIZED_URL=$WORK_URL"
           echo "MAX_HEIGHT=$MAX_HEIGHT"
+          echo "REFERER_URL=$REFERER_URL"
+
+          {
+            echo "PLATFORM=${PLATFORM}"
+            echo "NORMALIZED_URL=${WORK_URL}"
+          } >> "$STATUS_FILE"
+
+          COOKIES_ARGS=()
+
+          if [ "$IS_YOUTUBE" = "1" ] && [ -n "${YOUTUBE_COOKIES_TXT:-}" ]; then
+            COOKIES_FILE="$RUNNER_TEMP/youtube-cookies.txt"
+            umask 077
+            printf '%s\n' "$YOUTUBE_COOKIES_TXT" > "$COOKIES_FILE"
+            sed -i 's/\r$//' "$COOKIES_FILE"
+            COOKIES_ARGS=(--cookies "$COOKIES_FILE")
+            echo "YOUTUBE_COOKIES=enabled"
+            echo "YOUTUBE_COOKIES=enabled" >> "$STATUS_FILE"
+          else
+            echo "YOUTUBE_COOKIES=disabled"
+            echo "YOUTUBE_COOKIES=disabled" >> "$STATUS_FILE"
+          fi
 
           EXTRACTOR_ARGS=""
 
           if [ "$IS_YOUTUBE" = "1" ]; then
-            EXTRACTOR_ARGS='--extractor-args youtube:player_client=android_vr'
+            case "$SLOT" in
+              1)
+                YOUTUBE_CLIENT="android_vr"
+                EXTRACTOR_ARGS='--extractor-args youtube:player_client=android_vr'
+                ;;
+              2)
+                YOUTUBE_CLIENT="ios"
+                EXTRACTOR_ARGS='--extractor-args youtube:player_client=ios'
+                ;;
+              3)
+                YOUTUBE_CLIENT="web_safari"
+                EXTRACTOR_ARGS='--extractor-args youtube:player_client=web_safari'
+                ;;
+            esac
+
+            echo "YOUTUBE_CLIENT=$YOUTUBE_CLIENT"
+            echo "YOUTUBE_CLIENT=$YOUTUBE_CLIENT" >> "$STATUS_FILE"
           fi
 
           HEIGHTS=""
@@ -158,11 +214,12 @@ jobs:
               --merge-output-format mp4 \
               --remux-video mp4 \
               --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-              --referer "https://www.youtube.com/" \
+              --referer "$REFERER_URL" \
               --add-header "Accept-Language:en-US,en;q=0.9" \
               --max-filesize 47M \
               -f "$FORMAT_SELECTOR" \
               -o "work/video.%(ext)s" \
+              "${COOKIES_ARGS[@]}" \
               $EXTRACTOR_ARGS \
               "$WORK_URL" > "work/yt-dlp-slot-${SLOT}-${HEIGHT}.log" 2>&1
             RC=$?
@@ -193,6 +250,13 @@ jobs:
 
               mv "$FILE" "work/video-${SLOT}.mp4"
 
+              {
+                echo "RESULT=success"
+                echo "SUCCESS_PLATFORM=${PLATFORM}"
+                echo "SUCCESS_HEIGHT=${HEIGHT}"
+                echo "SUCCESS_SIZE_BYTES=${SIZE_BYTES}"
+              } >> "$STATUS_FILE"
+
               echo "ATTEMPT_SUCCESS=SLOT_${SLOT}"
               echo "SUCCESS_PLATFORM=$PLATFORM"
               echo "SUCCESS_HEIGHT=$HEIGHT"
@@ -209,17 +273,63 @@ jobs:
             exit 0
           fi
 
+          {
+            echo "RESULT=failed"
+            echo "REASON=all_heights_failed"
+          } >> "$STATUS_FILE"
+
           echo "ATTEMPT_FAILED=SLOT_${SLOT}"
           echo "PLATFORM=$PLATFORM"
           echo "ALL_HEIGHTS_FAILED=1"
 
-          exit 1
+          exit 0
 
-      - name: Upload downloaded video
-        if: success()
+      - name: Upload probe result
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: video-slot-${{ matrix.slot }}
-          path: work/video-${{ matrix.slot }}.mp4
+          name: probe-slot-${{ matrix.slot }}
+          path: |
+            work/status-${{ matrix.slot }}.txt
+            work/video-${{ matrix.slot }}.mp4
           if-no-files-found: error
           retention-days: 1
+
+  verify_result:
+    name: Verify at least one download
+    runs-on: ubuntu-latest
+    needs: probe_video
+    if: always()
+
+    steps:
+      - name: Download probe artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: probe-slot-*
+          path: collected
+          merge-multiple: true
+
+      - name: Check result
+        shell: bash
+        run: |
+          set -e
+
+          echo "Collected files:"
+          find collected -type f -maxdepth 2 -print | sort || true
+
+          echo ""
+          echo "Status files:"
+          cat collected/status-*.txt || true
+
+          VIDEO_COUNT="$(find collected -type f -name 'video-*.mp4' -size +0c | wc -l | tr -d ' ')"
+
+          echo ""
+          echo "VIDEO_COUNT=${VIDEO_COUNT}"
+
+          if [ "$VIDEO_COUNT" -ge 1 ]; then
+            echo "FINAL_RESULT=success"
+            exit 0
+          fi
+
+          echo "FINAL_RESULT=failed"
+          exit 1
