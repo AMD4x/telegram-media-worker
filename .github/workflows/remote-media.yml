@@ -224,6 +224,99 @@ jobs:
               "$log_file"
           }
 
+          normalize_media_for_sharing() {
+            set +e
+
+            local input_file="$1"
+            local output_file="$2"
+
+            if [ ! -f "$input_file" ]; then
+              echo "ERROR: Normalize input file is missing."
+              return 1
+            fi
+
+            local input_size
+            input_size="$(stat -c%s "$input_file" 2>/dev/null || echo 0)"
+
+            if [ "$input_size" -le 0 ]; then
+              echo "ERROR: Normalize input file is empty."
+              return 1
+            fi
+
+            local input_vcodec
+            local input_acodec
+            local input_pix_fmt
+
+            input_vcodec="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$input_file" 2>/dev/null | head -n 1 || true)"
+            input_acodec="$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$input_file" 2>/dev/null | head -n 1 || true)"
+            input_pix_fmt="$(ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$input_file" 2>/dev/null | head -n 1 || true)"
+
+            echo "NORMALIZE_MEDIA=1"
+            echo "INPUT_VIDEO_CODEC=${input_vcodec:-unknown}"
+            echo "INPUT_AUDIO_CODEC=${input_acodec:-none}"
+            echo "INPUT_PIXEL_FORMAT=${input_pix_fmt:-unknown}"
+
+            local tmp_output
+            tmp_output="${output_file}.tmp.mp4"
+
+            rm -f "$output_file" "$tmp_output"
+
+            ffmpeg -hide_banner -loglevel error -y \
+              -i "$input_file" \
+              -map 0:v:0 -map 0:a:0? \
+              -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p" \
+              -c:v libx264 \
+              -preset veryfast \
+              -crf 23 \
+              -c:a aac \
+              -profile:a aac_low \
+              -b:a 128k \
+              -ar 44100 \
+              -ac 2 \
+              -movflags +faststart \
+              "$tmp_output"
+
+            local rc=$?
+
+            if [ "$rc" -ne 0 ]; then
+              echo "ERROR: ffmpeg normalize failed. RC=${rc}"
+              rm -f "$tmp_output"
+              return 1
+            fi
+
+            if [ ! -f "$tmp_output" ]; then
+              echo "ERROR: Normalized output file is missing."
+              return 1
+            fi
+
+            local output_size
+            output_size="$(stat -c%s "$tmp_output" 2>/dev/null || echo 0)"
+
+            if [ "$output_size" -le 0 ]; then
+              echo "ERROR: Normalized output file is empty."
+              rm -f "$tmp_output"
+              return 1
+            fi
+
+            mv "$tmp_output" "$output_file"
+
+            local output_vcodec
+            local output_acodec
+            local output_pix_fmt
+
+            output_vcodec="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$output_file" 2>/dev/null | head -n 1 || true)"
+            output_acodec="$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$output_file" 2>/dev/null | head -n 1 || true)"
+            output_pix_fmt="$(ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$output_file" 2>/dev/null | head -n 1 || true)"
+
+            echo "NORMALIZE_SUCCESS=1"
+            echo "OUTPUT_VIDEO_CODEC=${output_vcodec:-unknown}"
+            echo "OUTPUT_AUDIO_CODEC=${output_acodec:-none}"
+            echo "OUTPUT_PIXEL_FORMAT=${output_pix_fmt:-unknown}"
+            echo "OUTPUT_SIZE_BYTES=${output_size}"
+
+            return 0
+          }
+
           send_to_telegram() {
             local file_path="$1"
             local success_height="$2"
@@ -323,12 +416,26 @@ jobs:
               file_ext="mp4"
             fi
 
-            renamed_file="work/media_${timestamp}_${PLATFORM}.${file_ext}"
+            source_file="work/source_${timestamp}_${PLATFORM}.${file_ext}"
+            final_file="work/media_${timestamp}_${PLATFORM}.mp4"
 
-            mv "$file_path" "$renamed_file"
-            file_path="$renamed_file"
+            mv "$file_path" "$source_file"
+            file_path="$source_file"
 
             echo "RENAMED_FILE=${file_path}"
+
+            normalize_media_for_sharing "$file_path" "$final_file"
+            local normalize_rc=$?
+
+            if [ "$normalize_rc" -ne 0 ]; then
+              echo "Media normalize failed after successful download. Trying a lower or alternate format."
+              return 1
+            fi
+
+            rm -f "$file_path"
+            file_path="$final_file"
+
+            echo "NORMALIZED_FILE=${file_path}"
 
             send_to_telegram "$file_path" "$success_height" "$attempt_label"
             local send_rc=$?
@@ -338,11 +445,11 @@ jobs:
             fi
 
             if [ "$send_rc" -eq 2 ]; then
-              echo "Downloaded file exceeded Telegram limit. Trying a lower or alternate format."
+              echo "Normalized file exceeded Telegram limit. Trying a lower or alternate format."
               return 2
             fi
 
-            echo "Telegram send failed after successful download."
+            echo "Telegram send failed after successful normalized download."
             exit 1
           }
 
