@@ -216,6 +216,10 @@ jobs:
 
             sed -E \
               -e 's#https?://[^[:space:]]+#<masked-url>#g' \
+              -e 's#(\[generic\] )[A-Za-z0-9_-]{6,}(: Downloading webpage)#\1<masked-id>\2#g' \
+              -e 's#(\[[A-Za-z0-9:_-]+\] )[0-9]{6,}(:)#\1<masked-id>\2#g' \
+              -e 's#([?&]v=)[A-Za-z0-9_-]+#\1<masked-id>#g' \
+              -e 's#(/reel/)[0-9]+#\1<masked-id>#g' \
               -e 's#[0-9]{10,}#<masked-id>#g' \
               "$log_file"
           }
