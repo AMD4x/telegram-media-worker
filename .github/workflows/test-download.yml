@@ -1,0 +1,225 @@
+name: Test Remote Media Download
+
+on:
+  workflow_dispatch:
+    inputs:
+      media_url:
+        description: "Media URL"
+        required: true
+        type: string
+      max_height:
+        description: "Max height"
+        required: true
+        default: "1080"
+        type: choice
+        options:
+          - "2160"
+          - "1440"
+          - "1080"
+          - "720"
+          - "480"
+          - "360"
+
+jobs:
+  probe_video:
+    name: Probe video slot ${{ matrix.slot }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [1, 2, 3]
+
+    steps:
+      - name: Install tools
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          python3 -m pip install --user --no-cache-dir yt-dlp
+
+      - name: Download media
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p work
+
+          SLOT="${{ matrix.slot }}"
+          SOURCE_URL="${{ inputs.media_url }}"
+          MAX_HEIGHT="${{ inputs.max_height }}"
+          MAX_FILE_BYTES="50000000"
+          CONCURRENT_FRAGMENTS="4"
+
+          if [ -z "$SOURCE_URL" ]; then
+            echo "Missing media_url."
+            exit 1
+          fi
+
+          WORK_URL="$SOURCE_URL"
+          VIDEO_ID=""
+          PLATFORM="generic"
+          IS_YOUTUBE="0"
+
+          LOWER_URL="$(printf "%s" "$SOURCE_URL" | tr "[:upper:]" "[:lower:]")"
+
+          if echo "$LOWER_URL" | grep -Eq "(youtube\.com|youtu\.be)"; then
+            PLATFORM="youtube"
+            IS_YOUTUBE="1"
+
+            if echo "$SOURCE_URL" | grep -Eq "youtube\.com/shorts/[A-Za-z0-9_-]+"; then
+              VIDEO_ID="$(echo "$SOURCE_URL" | sed -nE 's#.*youtube\.com/shorts/([A-Za-z0-9_-]+).*#\1#p')"
+            elif echo "$SOURCE_URL" | grep -Eq "youtu\.be/[A-Za-z0-9_-]+"; then
+              VIDEO_ID="$(echo "$SOURCE_URL" | sed -nE 's#.*youtu\.be/([A-Za-z0-9_-]+).*#\1#p')"
+            elif echo "$SOURCE_URL" | grep -Eq "[?&]v=[A-Za-z0-9_-]+"; then
+              VIDEO_ID="$(echo "$SOURCE_URL" | sed -nE 's#.*[?&]v=([A-Za-z0-9_-]+).*#\1#p')"
+            fi
+
+            if [ -n "$VIDEO_ID" ]; then
+              WORK_URL="https://www.youtube.com/watch?v=${VIDEO_ID}"
+            fi
+          elif echo "$LOWER_URL" | grep -Eq "(facebook\.com|fb\.watch)"; then
+            PLATFORM="facebook"
+          elif echo "$LOWER_URL" | grep -Eq "(instagram\.com)"; then
+            PLATFORM="instagram"
+          elif echo "$LOWER_URL" | grep -Eq "(tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com)"; then
+            PLATFORM="tiktok"
+          elif echo "$LOWER_URL" | grep -Eq "(twitter\.com|x\.com)"; then
+            PLATFORM="x"
+          elif echo "$LOWER_URL" | grep -Eq "(reddit\.com|redd\.it)"; then
+            PLATFORM="reddit"
+          fi
+
+          echo "SLOT=$SLOT"
+          echo "PLATFORM=$PLATFORM"
+          echo "ORIGINAL_URL=$SOURCE_URL"
+          echo "NORMALIZED_URL=$WORK_URL"
+          echo "MAX_HEIGHT=$MAX_HEIGHT"
+
+          EXTRACTOR_ARGS=""
+
+          if [ "$IS_YOUTUBE" = "1" ]; then
+            EXTRACTOR_ARGS='--extractor-args youtube:player_client=android_vr'
+          fi
+
+          HEIGHTS=""
+
+          if [ "$MAX_HEIGHT" -ge 2160 ] 2>/dev/null; then
+            HEIGHTS="$HEIGHTS 2160"
+          fi
+
+          if [ "$MAX_HEIGHT" -ge 1440 ] 2>/dev/null; then
+            HEIGHTS="$HEIGHTS 1440"
+          fi
+
+          if [ "$MAX_HEIGHT" -ge 1080 ] 2>/dev/null; then
+            HEIGHTS="$HEIGHTS 1080"
+          fi
+
+          if [ "$MAX_HEIGHT" -ge 720 ] 2>/dev/null; then
+            HEIGHTS="$HEIGHTS 720"
+          fi
+
+          if [ "$MAX_HEIGHT" -ge 480 ] 2>/dev/null; then
+            HEIGHTS="$HEIGHTS 480"
+          fi
+
+          HEIGHTS="$HEIGHTS 360"
+
+          SUCCESS=0
+
+          for HEIGHT in $HEIGHTS; do
+            echo ""
+            echo "=============================="
+            echo "SLOT=${SLOT} TRY_HEIGHT=${HEIGHT}"
+            echo "=============================="
+
+            rm -f work/video.*
+
+            FORMAT_SELECTOR="bestvideo[ext=mp4][height<=${HEIGHT}][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[ext=mp4][height<=${HEIGHT}]+bestaudio[ext=m4a]/best[ext=mp4][height<=${HEIGHT}][acodec!=none][vcodec!=none]/best[height<=${HEIGHT}][acodec!=none][vcodec!=none]"
+
+            if [ "$IS_YOUTUBE" = "1" ]; then
+              FORMAT_SELECTOR="${FORMAT_SELECTOR}/22/18"
+            else
+              FORMAT_SELECTOR="${FORMAT_SELECTOR}/best[ext=mp4][acodec!=none][vcodec!=none]/best"
+            fi
+
+            set +e
+            python3 -m yt_dlp \
+              --no-playlist \
+              --no-warnings \
+              --force-ipv4 \
+              --geo-bypass \
+              --socket-timeout 20 \
+              --retries 1 \
+              --fragment-retries 1 \
+              --concurrent-fragments "$CONCURRENT_FRAGMENTS" \
+              --merge-output-format mp4 \
+              --remux-video mp4 \
+              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+              --referer "https://www.youtube.com/" \
+              --add-header "Accept-Language:en-US,en;q=0.9" \
+              --max-filesize 47M \
+              -f "$FORMAT_SELECTOR" \
+              -o "work/video.%(ext)s" \
+              $EXTRACTOR_ARGS \
+              "$WORK_URL" > "work/yt-dlp-slot-${SLOT}-${HEIGHT}.log" 2>&1
+            RC=$?
+            set -e
+
+            cat "work/yt-dlp-slot-${SLOT}-${HEIGHT}.log"
+
+            FILE="$(find work -maxdepth 1 -type f -name "video.*" | head -n 1 || true)"
+
+            if [ "$RC" -eq 0 ] && [ -n "$FILE" ] && [ -f "$FILE" ]; then
+              SIZE_BYTES="$(stat -c%s "$FILE")"
+
+              echo "DOWNLOAD_SUCCESS_HEIGHT=${HEIGHT}"
+              echo "Downloaded file: $FILE"
+              echo "Size bytes: $SIZE_BYTES"
+
+              if [ "$SIZE_BYTES" -le 0 ]; then
+                echo "Downloaded file is empty. Trying lower height."
+                rm -f "$FILE"
+                continue
+              fi
+
+              if [ "$SIZE_BYTES" -gt "$MAX_FILE_BYTES" ]; then
+                echo "File is too large. Trying lower height."
+                rm -f "$FILE"
+                continue
+              fi
+
+              mv "$FILE" "work/video-${SLOT}.mp4"
+
+              echo "ATTEMPT_SUCCESS=SLOT_${SLOT}"
+              echo "SUCCESS_PLATFORM=$PLATFORM"
+              echo "SUCCESS_HEIGHT=$HEIGHT"
+              echo "SUCCESS_SIZE_BYTES=$SIZE_BYTES"
+
+              SUCCESS=1
+              break
+            fi
+
+            echo "HEIGHT_FAILED=${HEIGHT} RC=$RC"
+          done
+
+          if [ "$SUCCESS" -eq 1 ]; then
+            exit 0
+          fi
+
+          echo "ATTEMPT_FAILED=SLOT_${SLOT}"
+          echo "PLATFORM=$PLATFORM"
+          echo "ALL_HEIGHTS_FAILED=1"
+
+          exit 1
+
+      - name: Upload downloaded video
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-slot-${{ matrix.slot }}
+          path: work/video-${{ matrix.slot }}.mp4
+          if-no-files-found: error
+          retention-days: 1
