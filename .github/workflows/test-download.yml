@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        slot: [1, 2, 3]
+        slot: [1, 2, 3, 4]
 
     steps:
       - name: Install tools
@@ -38,7 +38,10 @@ jobs:
 
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg ca-certificates
-          python3 -m pip install --user --no-cache-dir yt-dlp
+          python3 -m pip install --user --no-cache-dir --upgrade --pre yt-dlp
+
+          echo "yt-dlp version:"
+          python3 -m yt_dlp --version
 
       - name: Download media
         shell: bash
@@ -129,29 +132,52 @@ jobs:
             umask 077
             printf '%s\n' "$YOUTUBE_COOKIES_TXT" > "$COOKIES_FILE"
             sed -i 's/\r$//' "$COOKIES_FILE"
+
+            COOKIE_BYTES="$(wc -c < "$COOKIES_FILE" | tr -d ' ')"
+            COOKIE_LINES="$(wc -l < "$COOKIES_FILE" | tr -d ' ')"
+            COOKIE_YOUTUBE_LINES="$(grep -Ei 'youtube\.com|google\.com' "$COOKIES_FILE" | wc -l | tr -d ' ')"
+            COOKIE_HAS_NETSCAPE="$(grep -E '^# Netscape HTTP Cookie File' "$COOKIES_FILE" >/dev/null 2>&1 && echo yes || echo no)"
+
             COOKIES_ARGS=(--cookies "$COOKIES_FILE")
+
             echo "YOUTUBE_COOKIES=enabled"
-            echo "YOUTUBE_COOKIES=enabled" >> "$STATUS_FILE"
+            echo "COOKIE_BYTES=${COOKIE_BYTES}"
+            echo "COOKIE_LINES=${COOKIE_LINES}"
+            echo "COOKIE_YOUTUBE_OR_GOOGLE_LINES=${COOKIE_YOUTUBE_LINES}"
+            echo "COOKIE_HAS_NETSCAPE_HEADER=${COOKIE_HAS_NETSCAPE}"
+
+            {
+              echo "YOUTUBE_COOKIES=enabled"
+              echo "COOKIE_BYTES=${COOKIE_BYTES}"
+              echo "COOKIE_LINES=${COOKIE_LINES}"
+              echo "COOKIE_YOUTUBE_OR_GOOGLE_LINES=${COOKIE_YOUTUBE_LINES}"
+              echo "COOKIE_HAS_NETSCAPE_HEADER=${COOKIE_HAS_NETSCAPE}"
+            } >> "$STATUS_FILE"
           else
             echo "YOUTUBE_COOKIES=disabled"
             echo "YOUTUBE_COOKIES=disabled" >> "$STATUS_FILE"
           fi
 
-          EXTRACTOR_ARGS=""
+          EXTRACTOR_ARGS=()
+          YOUTUBE_CLIENT="none"
 
           if [ "$IS_YOUTUBE" = "1" ]; then
             case "$SLOT" in
               1)
-                YOUTUBE_CLIENT="android_vr"
-                EXTRACTOR_ARGS='--extractor-args youtube:player_client=android_vr'
+                YOUTUBE_CLIENT="default"
+                EXTRACTOR_ARGS=()
                 ;;
               2)
-                YOUTUBE_CLIENT="ios"
-                EXTRACTOR_ARGS='--extractor-args youtube:player_client=ios'
+                YOUTUBE_CLIENT="mweb"
+                EXTRACTOR_ARGS=(--extractor-args "youtube:player_client=mweb")
                 ;;
               3)
-                YOUTUBE_CLIENT="web_safari"
-                EXTRACTOR_ARGS='--extractor-args youtube:player_client=web_safari'
+                YOUTUBE_CLIENT="tv"
+                EXTRACTOR_ARGS=(--extractor-args "youtube:player_client=tv")
+                ;;
+              4)
+                YOUTUBE_CLIENT="ios"
+                EXTRACTOR_ARGS=(--extractor-args "youtube:player_client=ios")
                 ;;
             esac
 
@@ -220,7 +246,7 @@ jobs:
               -f "$FORMAT_SELECTOR" \
               -o "work/video.%(ext)s" \
               "${COOKIES_ARGS[@]}" \
-              $EXTRACTOR_ARGS \
+              "${EXTRACTOR_ARGS[@]}" \
               "$WORK_URL" > "work/yt-dlp-slot-${SLOT}-${HEIGHT}.log" 2>&1
             RC=$?
             set -e
@@ -273,6 +299,36 @@ jobs:
             exit 0
           fi
 
+          if [ "$IS_YOUTUBE" = "1" ]; then
+            echo ""
+            echo "=============================="
+            echo "SLOT=${SLOT} LIST_FORMATS_DIAGNOSTIC"
+            echo "=============================="
+
+            set +e
+            python3 -m yt_dlp \
+              --no-playlist \
+              --force-ipv4 \
+              --geo-bypass \
+              --socket-timeout 20 \
+              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+              --referer "$REFERER_URL" \
+              --add-header "Accept-Language:en-US,en;q=0.9" \
+              --list-formats \
+              "${COOKIES_ARGS[@]}" \
+              "${EXTRACTOR_ARGS[@]}" \
+              "$WORK_URL" > "work/formats-slot-${SLOT}.log" 2>&1
+            LF_RC=$?
+            set -e
+
+            echo "LIST_FORMATS_RC=${LF_RC}"
+            cat "work/formats-slot-${SLOT}.log" || true
+
+            {
+              echo "LIST_FORMATS_RC=${LF_RC}"
+            } >> "$STATUS_FILE"
+          fi
+
           {
             echo "RESULT=failed"
             echo "REASON=all_heights_failed"
@@ -292,6 +348,7 @@ jobs:
           path: |
             work/status-${{ matrix.slot }}.txt
             work/video-${{ matrix.slot }}.mp4
+            work/*.log
           if-no-files-found: error
           retention-days: 1
 
