@@ -20,6 +20,14 @@ on:
           - "720"
           - "480"
           - "360"
+      progress_chat_id:
+        description: "Telegram progress chat id"
+        required: false
+        type: string
+      progress_message_id:
+        description: "Telegram progress message id"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -52,6 +60,8 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           MEDIA_URL_INPUT: ${{ inputs.media_url }}
           MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
+          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
+          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
         run: |
           set -e
 
@@ -66,6 +76,68 @@ jobs:
           YTDLP_MAX_FILESIZE="2000M"
           CONCURRENT_FRAGMENTS="4"
           LOCAL_BOT_API_STARTED="0"
+          SIZE_FIT_APPLIED_FINAL="0"
+          SIZE_FIT_FINAL_HEIGHT_FINAL=""
+          SIZE_FIT_AUDIO_MODE_FINAL=""
+          FINAL_SIZE_STATUS="OK"
+
+          telegram_escape_html() {
+            python3 -c 'import html, sys; print(html.escape(sys.stdin.read(), quote=False), end="")'
+          }
+
+          format_bytes_for_telegram() {
+            python3 -c 'import math, sys; n=max(int(float(sys.argv[1])),0); units=["B","KB","MB","GB"]; idx=0 if n < 1024 else min(int(math.log(max(n,1), 1024)), len(units)-1); value=n/(1024**idx); print(f"{int(value)} B" if idx == 0 else f"{value:.2f} {units[idx]}")' "${1:-0}" 2>/dev/null || echo "Unknown"
+          }
+
+          telegram_send_mode_label() {
+            case "$1" in
+              public)
+                printf '%s' "Public Bot API"
+                ;;
+              local)
+                printf '%s' "Local Bot API"
+                ;;
+              *)
+                printf '%s' "${1:-Unknown}"
+                ;;
+            esac
+          }
+
+          telegram_edit_progress() {
+            local percent="$1"
+            local label="$2"
+            local detail="$3"
+
+            if [ -z "${PROGRESS_CHAT_ID:-}" ] || [ -z "${PROGRESS_MESSAGE_ID:-}" ]; then
+              return 0
+            fi
+
+            local safe_label
+            local safe_detail
+            local safe_run_url
+            local text
+
+            safe_label="$(printf "%s" "$label" | telegram_escape_html)"
+            safe_detail="$(printf "%s" "$detail" | tr "_" " " | telegram_escape_html)"
+            safe_run_url="$(printf "%s" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" | telegram_escape_html)"
+
+            printf -v text '🐙 <b>GitHub Remote</b>\n\n📊 <code>%s%%</code>\n🧭 <b>Status:</b> %s\nℹ️ <i>%s</i>\n🆔 <code>%s</code>\n🔗 <a href="%s">Open Run</a>' \
+              "$percent" \
+              "$safe_label" \
+              "$safe_detail" \
+              "$GITHUB_RUN_ID" \
+              "$safe_run_url"
+
+            curl -sS \
+              --connect-timeout 10 \
+              --max-time 20 \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText" \
+              -F "chat_id=${PROGRESS_CHAT_ID}" \
+              -F "message_id=${PROGRESS_MESSAGE_ID}" \
+              -F "parse_mode=HTML" \
+              -F "disable_web_page_preview=true" \
+              -F "text=${text}" >/dev/null 2>&1 || true
+          }
 
           progress_stage() {
             local stage="$1"
@@ -77,6 +149,90 @@ jobs:
             echo "PROGRESS_PERCENT=${percent}"
             echo "PROGRESS_LABEL=${label}"
             echo "PROGRESS_DETAIL=${detail}"
+
+            telegram_edit_progress "$percent" "$label" "$detail"
+          }
+
+          telegram_edit_summary() {
+            local title="$1"
+            local suffix="$2"
+            local size_bytes="$3"
+            local success_height="$4"
+            local send_mode="$5"
+            local send_method="$6"
+
+            if [ -z "${PROGRESS_CHAT_ID:-}" ] || [ -z "${PROGRESS_MESSAGE_ID:-}" ]; then
+              return 0
+            fi
+
+            local downloaded_size_text
+            local final_size_text
+            local send_mode_text
+            local safe_platform
+            local safe_quality
+            local safe_input_codec
+            local safe_output_codec
+            local safe_send_mode
+            local safe_send_method
+            local safe_run_url
+            local size_fit_lines
+            local safe_suffix
+            local text
+
+            downloaded_size_text="$(format_bytes_for_telegram "${DOWNLOAD_SIZE_BYTES_FINAL:-0}")"
+            final_size_text="$(format_bytes_for_telegram "${size_bytes:-0}")"
+            send_mode_text="$(telegram_send_mode_label "$send_mode")"
+
+            safe_platform="$(printf "%s" "${PLATFORM:-unknown}" | telegram_escape_html)"
+            safe_quality="$(printf "%s / %s" "${success_height:-unknown}" "${MAX_HEIGHT:-auto}" | telegram_escape_html)"
+            safe_input_codec="$(printf "%s" "${INPUT_VIDEO_CODEC_FINAL:-Unknown}" | telegram_escape_html)"
+            safe_output_codec="$(printf "%s" "${OUTPUT_VIDEO_CODEC_FINAL:-Unknown}" | telegram_escape_html)"
+            safe_send_mode="$(printf "%s" "$send_mode_text" | telegram_escape_html)"
+            safe_send_method="$(printf "%s" "$send_method" | telegram_escape_html)"
+            safe_run_url="$(printf "%s" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" | telegram_escape_html)"
+            safe_suffix="$(printf "%s" "$suffix" | telegram_escape_html)"
+
+            size_fit_lines=""
+            if [ "${SIZE_FIT_APPLIED_FINAL:-0}" = "1" ]; then
+              printf -v size_fit_lines '\n🛠️ <b>Size Fit:</b> Applied'
+
+              if [ -n "${SIZE_FIT_FINAL_HEIGHT_FINAL:-}" ]; then
+                printf -v size_fit_lines '%s\n📉 <b>Fit Height:</b> <code>%sp</code>' "$size_fit_lines" "$SIZE_FIT_FINAL_HEIGHT_FINAL"
+              fi
+
+              if [ "${SIZE_FIT_AUDIO_MODE_FINAL:-}" = "copy" ]; then
+                printf -v size_fit_lines '%s\n🔊 <b>Audio Fit:</b> Copy — No Re-encode' "$size_fit_lines"
+              fi
+            fi
+
+            printf -v text '%s\n\n🌐 <b>Platform:</b> <code>%s</code>\n🎚️ <b>Quality:</b> <code>%s</code>\n📥 <b>Downloaded Size:</b> <code>%s</code>\n🎬 <b>Codec:</b> <code>%s → %s</code>%s\n📦 <b>Final Size:</b> <code>%s</code> — %s\n🚀 <b>Send Mode:</b> <code>%s</code>\n📤 <b>Send Method:</b> <code>%s</code>\n🆔 <code>%s</code>\n🔗 <a href="%s">Open Run</a>' \
+              "$title" \
+              "$safe_platform" \
+              "$safe_quality" \
+              "$downloaded_size_text" \
+              "$safe_input_codec" \
+              "$safe_output_codec" \
+              "$size_fit_lines" \
+              "$final_size_text" \
+              "${FINAL_SIZE_STATUS:-OK}" \
+              "$safe_send_mode" \
+              "$safe_send_method" \
+              "$GITHUB_RUN_ID" \
+              "$safe_run_url"
+
+            if [ -n "$safe_suffix" ]; then
+              text="$(printf '%s\n%s' "$text" "$safe_suffix")"
+            fi
+
+            curl -sS \
+              --connect-timeout 10 \
+              --max-time 20 \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText" \
+              -F "chat_id=${PROGRESS_CHAT_ID}" \
+              -F "message_id=${PROGRESS_MESSAGE_ID}" \
+              -F "parse_mode=HTML" \
+              -F "disable_web_page_preview=true" \
+              -F "text=${text}" >/dev/null 2>&1 || true
           }
 
           progress_stage "preparing" "10" "Preparing" "Preparing_worker"
@@ -296,6 +452,9 @@ jobs:
             echo "INPUT_AUDIO_CODEC=${input_acodec:-none}"
             echo "INPUT_PIXEL_FORMAT=${input_pix_fmt:-unknown}"
 
+            INPUT_VIDEO_CODEC_FINAL="${input_vcodec:-unknown}"
+            INPUT_AUDIO_CODEC_FINAL="${input_acodec:-none}"
+
             local tmp_output
             tmp_output="${output_file}.tmp.mp4"
 
@@ -353,6 +512,10 @@ jobs:
             echo "OUTPUT_AUDIO_CODEC=${output_acodec:-none}"
             echo "OUTPUT_PIXEL_FORMAT=${output_pix_fmt:-unknown}"
             echo "OUTPUT_SIZE_BYTES=${output_size}"
+
+            OUTPUT_VIDEO_CODEC_FINAL="${output_vcodec:-unknown}"
+            OUTPUT_AUDIO_CODEC_FINAL="${output_acodec:-none}"
+            OUTPUT_SIZE_BYTES_FINAL="${output_size}"
 
             progress_stage "normalized" "68" "Processed" "Media_normalized"
 
@@ -524,6 +687,11 @@ jobs:
                 echo "SIZE_FIT_FINAL_BYTES=${output_size}"
                 echo "SIZE_FIT_FINAL_HEIGHT=${target_height}"
                 echo "SIZE_FIT_AUDIO_MODE=copy"
+
+                SIZE_FIT_APPLIED_FINAL="1"
+                SIZE_FIT_FINAL_HEIGHT_FINAL="${target_height}"
+                SIZE_FIT_AUDIO_MODE_FINAL="copy"
+                FINAL_SIZE_STATUS="Reduced to fit"
 
                 progress_stage "size_fit_done" "82" "Reduced" "Size_fit_completed"
 
@@ -728,8 +896,16 @@ jobs:
 
             progress_stage "ready_to_send" "90" "Ready" "Media_ready_to_send"
 
-            # Give the bot a short window to show the ready summary before Telegram receives the video.
-            sleep 2
+            telegram_edit_summary \
+              "✅ <b>GitHub Remote ready</b>" \
+              "⏳ <i>Sending to Telegram...</i>" \
+              "$size_bytes" \
+              "$success_height" \
+              "$send_mode" \
+              "Video"
+
+            # Give Telegram progress message enough time to update before the video arrives.
+            sleep 5
 
             progress_stage "sending" "95" "Sending" "Sending_to_Telegram"
 
@@ -745,6 +921,14 @@ jobs:
               echo "FINAL_RESULT=success"
 
               progress_stage "sent" "98" "Finalizing" "Telegram_send_completed"
+
+              telegram_edit_summary \
+                "✅ <b>GitHub Remote completed</b>" \
+                "" \
+                "$size_bytes" \
+                "$success_height" \
+                "$send_mode" \
+                "Video"
 
               return 0
             fi
@@ -766,6 +950,14 @@ jobs:
                 echo "FINAL_RESULT=success"
 
                 progress_stage "sent" "98" "Finalizing" "Telegram_send_completed"
+
+                telegram_edit_summary \
+                  "✅ <b>GitHub Remote completed</b>" \
+                  "" \
+                  "$size_bytes" \
+                  "$success_height" \
+                  "$send_mode" \
+                  "Document fallback"
 
                 return 0
               fi
@@ -805,6 +997,8 @@ jobs:
             echo "DOWNLOAD_SUCCESS_HEIGHT=${success_height}"
             echo "DOWNLOAD_SUCCESS_ATTEMPT=${attempt_label}"
             echo "DOWNLOAD_SIZE_BYTES=${size_bytes}"
+
+            DOWNLOAD_SIZE_BYTES_FINAL="${size_bytes}"
 
             progress_stage "downloaded" "50" "Downloaded" "Download_completed"
 
