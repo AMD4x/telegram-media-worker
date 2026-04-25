@@ -38,10 +38,21 @@ jobs:
 
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg ca-certificates
-          python3 -m pip install --user --no-cache-dir --upgrade --pre yt-dlp
+
+          python3 -m pip install --user --no-cache-dir --upgrade pip
+          python3 -m pip install --user --no-cache-dir --upgrade --pre "yt-dlp[default]"
+
+          echo "Python version:"
+          python3 --version
 
           echo "yt-dlp version:"
           python3 -m yt_dlp --version
+
+          echo "Node version:"
+          node --version || true
+
+          echo "ffmpeg version:"
+          ffmpeg -version | head -n 1
 
       - name: Download media
         shell: bash
@@ -158,26 +169,29 @@ jobs:
             echo "YOUTUBE_COOKIES=disabled" >> "$STATUS_FILE"
           fi
 
+          JS_ARGS=()
           EXTRACTOR_ARGS=()
           YOUTUBE_CLIENT="none"
 
           if [ "$IS_YOUTUBE" = "1" ]; then
+            JS_ARGS=(--js-runtimes node)
+
             case "$SLOT" in
               1)
-                YOUTUBE_CLIENT="default"
+                YOUTUBE_CLIENT="default_node_ejs"
                 EXTRACTOR_ARGS=()
                 ;;
               2)
-                YOUTUBE_CLIENT="mweb"
-                EXTRACTOR_ARGS=(--extractor-args "youtube:player_client=mweb")
-                ;;
-              3)
-                YOUTUBE_CLIENT="tv"
+                YOUTUBE_CLIENT="tv_node_ejs"
                 EXTRACTOR_ARGS=(--extractor-args "youtube:player_client=tv")
                 ;;
+              3)
+                YOUTUBE_CLIENT="web_safari_node_ejs"
+                EXTRACTOR_ARGS=(--extractor-args "youtube:player_client=web_safari")
+                ;;
               4)
-                YOUTUBE_CLIENT="ios"
-                EXTRACTOR_ARGS=(--extractor-args "youtube:player_client=ios")
+                YOUTUBE_CLIENT="android_vr_node_ejs"
+                EXTRACTOR_ARGS=(--extractor-args "youtube:player_client=android_vr")
                 ;;
             esac
 
@@ -200,6 +214,7 @@ jobs:
             --referer "$REFERER_URL" \
             --add-header "Accept-Language:en-US,en;q=0.9" \
             --list-formats \
+            "${JS_ARGS[@]}" \
             "${COOKIES_ARGS[@]}" \
             "${EXTRACTOR_ARGS[@]}" \
             "$WORK_URL" > "work/formats-slot-${SLOT}.log" 2>&1
@@ -273,6 +288,7 @@ jobs:
               --max-filesize 47M \
               -f "$FORMAT_SELECTOR" \
               -o "work/video.%(ext)s" \
+              "${JS_ARGS[@]}" \
               "${COOKIES_ARGS[@]}" \
               "${EXTRACTOR_ARGS[@]}" \
               "$WORK_URL" > "work/yt-dlp-slot-${SLOT}-${HEIGHT}.log" 2>&1
@@ -352,6 +368,7 @@ jobs:
             --max-filesize 47M \
             -S "res:${MAX_HEIGHT},ext:mp4:m4a" \
             -o "work/video.%(ext)s" \
+            "${JS_ARGS[@]}" \
             "${COOKIES_ARGS[@]}" \
             "${EXTRACTOR_ARGS[@]}" \
             "$WORK_URL" > "work/fallback-slot-${SLOT}.log" 2>&1
@@ -443,7 +460,7 @@ jobs:
             [ -f "$f" ] || continue
             echo ""
             echo "----- ${f} -----"
-            grep -Ei 'Available formats|ID +EXT|mp4|webm|m4a|storyboard|images|missing|SABR|PO Token|DRM|ERROR|WARNING' "$f" | head -n 80 || true
+            grep -Ei 'Solving JS|jsc|Available formats|ID +EXT|mp4|webm|m4a|storyboard|images|missing|SABR|PO Token|DRM|ERROR|WARNING' "$f" | head -n 120 || true
           done
 
           echo ""
@@ -452,7 +469,7 @@ jobs:
             [ -f "$f" ] || continue
             echo ""
             echo "----- ${f} -----"
-            grep -Ei 'Downloading|Destination|Merging|ERROR|WARNING|has already been downloaded|size|format|Requested' "$f" | head -n 80 || true
+            grep -Ei 'Solving JS|jsc|Downloading|Destination|Merging|ERROR|WARNING|has already been downloaded|size|format|Requested' "$f" | head -n 120 || true
           done
 
           VIDEO_COUNT="$(find collected -type f -name 'video-*.mp4' -size +0c | wc -l | tr -d ' ')"
