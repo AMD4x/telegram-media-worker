@@ -29,7 +29,7 @@ jobs:
   download_and_send:
     name: Download and send first success
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     container:
       image: ghcr.io/ad4x/tg-video-worker:latest
@@ -386,32 +386,7 @@ jobs:
             local target_bytes="$2"
             local audio_bitrate_bps="$3"
 
-            python3 - "$duration_seconds" "$target_bytes" "$audio_bitrate_bps" <<'PY'
-import sys
-
-try:
-    duration = float(sys.argv[1])
-    target_bytes = int(sys.argv[2])
-    audio_bps = int(sys.argv[3])
-except Exception:
-    print(0)
-    raise SystemExit
-
-if duration <= 0 or target_bytes <= 0:
-    print(0)
-    raise SystemExit
-
-# Keep a small safety margin for MP4 container overhead.
-target_total_bps = (target_bytes * 8.0 / duration) * 0.97
-video_bps = target_total_bps - audio_bps
-
-video_kbps = int(video_bps / 1000)
-
-if video_kbps < 150:
-    video_kbps = 150
-
-print(video_kbps)
-PY
+            python3 -c 'import sys; duration=float(sys.argv[1]); target_bytes=int(sys.argv[2]); audio_bps=int(sys.argv[3]); video_kbps=0 if duration<=0 or target_bytes<=0 else int((((target_bytes*8.0/duration)*0.97)-audio_bps)/1000); print(max(video_kbps, 150) if video_kbps>0 else 0)' "$duration_seconds" "$target_bytes" "$audio_bitrate_bps" 2>/dev/null || echo 0
           }
 
           compress_media_to_fit_telegram_limit() {
