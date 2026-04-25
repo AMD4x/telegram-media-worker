@@ -193,13 +193,13 @@ jobs:
 
             rm -f work/video.*
 
-            FORMAT_SELECTOR="bestvideo[ext=mp4][height<=${HEIGHT}][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[ext=mp4][height<=${HEIGHT}]+bestaudio[ext=m4a]/best[ext=mp4][height<=${HEIGHT}][acodec!=none][vcodec!=none]/best[height<=${HEIGHT}][acodec!=none][vcodec!=none]"
-
             if [ "$IS_YOUTUBE" = "1" ]; then
-              FORMAT_SELECTOR="${FORMAT_SELECTOR}/22/18"
+              FORMAT_SELECTOR="bv*[height<=${HEIGHT}]+ba/b[height<=${HEIGHT}]/bv*+ba/best/22/18"
             else
-              FORMAT_SELECTOR="${FORMAT_SELECTOR}/best[ext=mp4][acodec!=none][vcodec!=none]/best"
+              FORMAT_SELECTOR="bestvideo[height<=${HEIGHT}]+bestaudio/best[height<=${HEIGHT}]/bestvideo+bestaudio/best"
             fi
+
+            echo "FORMAT_SELECTOR=${FORMAT_SELECTOR}"
 
             set +e
             python3 -m yt_dlp \
