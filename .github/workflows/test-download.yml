@@ -1,4 +1,4 @@
-name: Test Remote Media Download
+name: Test Remote Media To Telegram
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        slot: [1, 2, 3, 4]
+        slot: [1, 2, 3]
 
     steps:
       - name: Install tools
@@ -38,12 +38,8 @@ jobs:
 
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg ca-certificates
-
           python3 -m pip install --user --no-cache-dir --upgrade pip
           python3 -m pip install --user --no-cache-dir --upgrade --pre "yt-dlp[default]"
-
-          echo "Python version:"
-          python3 --version
 
           echo "yt-dlp version:"
           python3 -m yt_dlp --version
@@ -124,12 +120,10 @@ jobs:
             REFERER_URL="https://www.reddit.com/"
           fi
 
-          echo "SLOT=$SLOT"
-          echo "PLATFORM=$PLATFORM"
-          echo "ORIGINAL_URL=$SOURCE_URL"
-          echo "NORMALIZED_URL=$WORK_URL"
-          echo "MAX_HEIGHT=$MAX_HEIGHT"
-          echo "REFERER_URL=$REFERER_URL"
+          echo "SLOT=${SLOT}"
+          echo "PLATFORM=${PLATFORM}"
+          echo "MAX_HEIGHT=${MAX_HEIGHT}"
+          echo "REFERER_URL=${REFERER_URL}"
 
           {
             echo "PLATFORM=${PLATFORM}"
@@ -146,7 +140,7 @@ jobs:
 
             COOKIE_BYTES="$(wc -c < "$COOKIES_FILE" | tr -d ' ')"
             COOKIE_LINES="$(wc -l < "$COOKIES_FILE" | tr -d ' ')"
-            COOKIE_YOUTUBE_LINES="$(grep -Ei 'youtube\.com|google\.com' "$COOKIES_FILE" | wc -l | tr -d ' ')"
+            COOKIE_YOUTUBE_LINES="$(grep -Ei 'youtube\.com|google\.com|accounts\.google\.com' "$COOKIES_FILE" | wc -l | tr -d ' ')"
             COOKIE_HAS_NETSCAPE="$(grep -E '^# Netscape HTTP Cookie File' "$COOKIES_FILE" >/dev/null 2>&1 && echo yes || echo no)"
 
             COOKIES_ARGS=(--cookies "$COOKIES_FILE")
@@ -189,44 +183,11 @@ jobs:
                 YOUTUBE_CLIENT="web_safari_node_ejs"
                 EXTRACTOR_ARGS=(--extractor-args "youtube:player_client=web_safari")
                 ;;
-              4)
-                YOUTUBE_CLIENT="android_vr_node_ejs"
-                EXTRACTOR_ARGS=(--extractor-args "youtube:player_client=android_vr")
-                ;;
             esac
 
-            echo "YOUTUBE_CLIENT=$YOUTUBE_CLIENT"
-            echo "YOUTUBE_CLIENT=$YOUTUBE_CLIENT" >> "$STATUS_FILE"
+            echo "YOUTUBE_CLIENT=${YOUTUBE_CLIENT}"
+            echo "YOUTUBE_CLIENT=${YOUTUBE_CLIENT}" >> "$STATUS_FILE"
           fi
-
-          echo ""
-          echo "=============================="
-          echo "SLOT=${SLOT} LIST_FORMATS_DIAGNOSTIC"
-          echo "=============================="
-
-          set +e
-          python3 -m yt_dlp \
-            --no-playlist \
-            --force-ipv4 \
-            --geo-bypass \
-            --socket-timeout 20 \
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            --referer "$REFERER_URL" \
-            --add-header "Accept-Language:en-US,en;q=0.9" \
-            --list-formats \
-            "${JS_ARGS[@]}" \
-            "${COOKIES_ARGS[@]}" \
-            "${EXTRACTOR_ARGS[@]}" \
-            "$WORK_URL" > "work/formats-slot-${SLOT}.log" 2>&1
-          LF_RC=$?
-          set -e
-
-          echo "LIST_FORMATS_RC=${LF_RC}"
-          cat "work/formats-slot-${SLOT}.log" || true
-
-          {
-            echo "LIST_FORMATS_RC=${LF_RC}"
-          } >> "$STATUS_FILE"
 
           HEIGHTS=""
 
@@ -328,91 +289,27 @@ jobs:
               } >> "$STATUS_FILE"
 
               echo "ATTEMPT_SUCCESS=SLOT_${SLOT}"
-              echo "SUCCESS_PLATFORM=$PLATFORM"
-              echo "SUCCESS_HEIGHT=$HEIGHT"
-              echo "SUCCESS_SIZE_BYTES=$SIZE_BYTES"
+              echo "SUCCESS_PLATFORM=${PLATFORM}"
+              echo "SUCCESS_HEIGHT=${HEIGHT}"
+              echo "SUCCESS_SIZE_BYTES=${SIZE_BYTES}"
 
               SUCCESS=1
               break
             fi
 
-            echo "HEIGHT_FAILED=${HEIGHT} RC=$RC"
+            echo "HEIGHT_FAILED=${HEIGHT} RC=${RC}"
           done
 
-          if [ "$SUCCESS" -eq 1 ]; then
-            exit 0
+          if [ "$SUCCESS" -ne 1 ]; then
+            {
+              echo "RESULT=failed"
+              echo "REASON=all_heights_failed"
+            } >> "$STATUS_FILE"
+
+            echo "ATTEMPT_FAILED=SLOT_${SLOT}"
+            echo "PLATFORM=${PLATFORM}"
+            echo "ALL_HEIGHTS_FAILED=1"
           fi
-
-          echo ""
-          echo "=============================="
-          echo "SLOT=${SLOT} FALLBACK_DEFAULT_DOWNLOAD"
-          echo "=============================="
-
-          rm -f work/video.*
-
-          set +e
-          python3 -m yt_dlp \
-            --no-playlist \
-            --no-warnings \
-            --force-ipv4 \
-            --geo-bypass \
-            --socket-timeout 20 \
-            --retries 1 \
-            --fragment-retries 1 \
-            --concurrent-fragments "$CONCURRENT_FRAGMENTS" \
-            --merge-output-format mp4 \
-            --remux-video mp4 \
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            --referer "$REFERER_URL" \
-            --add-header "Accept-Language:en-US,en;q=0.9" \
-            --max-filesize 47M \
-            -S "res:${MAX_HEIGHT},ext:mp4:m4a" \
-            -o "work/video.%(ext)s" \
-            "${JS_ARGS[@]}" \
-            "${COOKIES_ARGS[@]}" \
-            "${EXTRACTOR_ARGS[@]}" \
-            "$WORK_URL" > "work/fallback-slot-${SLOT}.log" 2>&1
-          FB_RC=$?
-          set -e
-
-          echo "FALLBACK_RC=${FB_RC}"
-          cat "work/fallback-slot-${SLOT}.log" || true
-
-          FILE="$(find work -maxdepth 1 -type f -name "video.*" | head -n 1 || true)"
-
-          if [ "$FB_RC" -eq 0 ] && [ -n "$FILE" ] && [ -f "$FILE" ]; then
-            SIZE_BYTES="$(stat -c%s "$FILE")"
-
-            echo "FALLBACK_SUCCESS_SIZE_BYTES=${SIZE_BYTES}"
-
-            if [ "$SIZE_BYTES" -gt 0 ] && [ "$SIZE_BYTES" -le "$MAX_FILE_BYTES" ]; then
-              mv "$FILE" "work/video-${SLOT}.mp4"
-
-              {
-                echo "RESULT=success"
-                echo "SUCCESS_PLATFORM=${PLATFORM}"
-                echo "SUCCESS_HEIGHT=fallback"
-                echo "SUCCESS_SIZE_BYTES=${SIZE_BYTES}"
-              } >> "$STATUS_FILE"
-
-              echo "ATTEMPT_SUCCESS=SLOT_${SLOT}"
-              echo "SUCCESS_PLATFORM=$PLATFORM"
-              echo "SUCCESS_HEIGHT=fallback"
-              echo "SUCCESS_SIZE_BYTES=$SIZE_BYTES"
-
-              exit 0
-            fi
-          fi
-
-          {
-            echo "FALLBACK_RC=${FB_RC}"
-            echo "RESULT=failed"
-            echo "REASON=all_methods_failed"
-          } >> "$STATUS_FILE"
-
-          echo "ATTEMPT_FAILED=SLOT_${SLOT}"
-          echo "PLATFORM=$PLATFORM"
-          echo "ALL_METHODS_FAILED=1"
 
           exit 0
 
@@ -428,11 +325,12 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  verify_result:
-    name: Verify at least one download
+  send_first_success:
+    name: Send first success to Telegram
     runs-on: ubuntu-latest
     needs: probe_video
     if: always()
+    timeout-minutes: 8
 
     steps:
       - name: Download probe artifacts
@@ -442,7 +340,7 @@ jobs:
           path: collected
           merge-multiple: true
 
-      - name: Check result
+      - name: Pick first successful video
         shell: bash
         run: |
           set -e
@@ -450,37 +348,76 @@ jobs:
           echo "Collected files:"
           find collected -type f -maxdepth 2 -print | sort || true
 
-          echo ""
-          echo "Status files:"
-          cat collected/status-*.txt || true
+          VIDEO_FILE="$(find collected -type f -name 'video-*.mp4' -size +0c | sort | head -n 1 || true)"
 
-          echo ""
-          echo "Formats diagnostics summary:"
-          for f in collected/formats-slot-*.log; do
-            [ -f "$f" ] || continue
+          if [ -z "$VIDEO_FILE" ]; then
+            echo "FINAL_RESULT=failed"
+            echo "No downloaded video found."
             echo ""
-            echo "----- ${f} -----"
-            grep -Ei 'Solving JS|jsc|Available formats|ID +EXT|mp4|webm|m4a|storyboard|images|missing|SABR|PO Token|DRM|ERROR|WARNING' "$f" | head -n 120 || true
-          done
+            echo "Status files:"
+            cat collected/status-*.txt || true
+            exit 1
+          fi
 
-          echo ""
-          echo "Fallback diagnostics summary:"
-          for f in collected/fallback-slot-*.log; do
-            [ -f "$f" ] || continue
-            echo ""
-            echo "----- ${f} -----"
-            grep -Ei 'Solving JS|jsc|Downloading|Destination|Merging|ERROR|WARNING|has already been downloaded|size|format|Requested' "$f" | head -n 120 || true
-          done
+          VIDEO_SIZE="$(stat -c%s "$VIDEO_FILE")"
 
-          VIDEO_COUNT="$(find collected -type f -name 'video-*.mp4' -size +0c | wc -l | tr -d ' ')"
+          echo "FINAL_RESULT=success"
+          echo "SELECTED_VIDEO=${VIDEO_FILE}"
+          echo "SELECTED_VIDEO_SIZE_BYTES=${VIDEO_SIZE}"
 
-          echo ""
-          echo "VIDEO_COUNT=${VIDEO_COUNT}"
+          {
+            echo "VIDEO_FILE=${VIDEO_FILE}"
+            echo "VIDEO_SIZE=${VIDEO_SIZE}"
+          } >> "$GITHUB_ENV"
 
-          if [ "$VIDEO_COUNT" -ge 1 ]; then
-            echo "FINAL_RESULT=success"
+      - name: Send video to Telegram
+        shell: bash
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -e
+
+          if [ -z "${TELEGRAM_TOKEN:-}" ]; then
+            echo "Missing TELEGRAM_TOKEN secret."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "Missing TELEGRAM_CHAT_ID secret."
+            exit 1
+          fi
+
+          if [ -z "${VIDEO_FILE:-}" ] || [ ! -f "$VIDEO_FILE" ]; then
+            echo "Selected video file is missing."
+            exit 1
+          fi
+
+          RESPONSE_FILE="$RUNNER_TEMP/telegram-response.json"
+
+          HTTP_CODE="$(
+            curl -sS \
+              -o "$RESPONSE_FILE" \
+              -w "%{http_code}" \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendVideo" \
+              -F "chat_id=${TELEGRAM_CHAT_ID}" \
+              -F "supports_streaming=true" \
+              -F "video=@${VIDEO_FILE}"
+          )"
+
+          echo "TELEGRAM_HTTP_CODE=${HTTP_CODE}"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Telegram send failed."
+            cat "$RESPONSE_FILE" || true
+            exit 1
+          fi
+
+          if grep -q '"ok":true' "$RESPONSE_FILE"; then
+            echo "TELEGRAM_SEND=success"
             exit 0
           fi
 
-          echo "FINAL_RESULT=failed"
+          echo "Telegram response did not contain ok=true."
+          cat "$RESPONSE_FILE" || true
           exit 1
