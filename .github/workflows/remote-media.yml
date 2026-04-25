@@ -59,10 +59,11 @@ jobs:
 
           SOURCE_URL="$MEDIA_URL_INPUT"
           MAX_HEIGHT="$MAX_HEIGHT_INPUT"
-          DIRECT_TELEGRAM_MAX_BYTES="1"
-          LOCAL_BOT_API_MAX_BYTES="1500000000"
+          DIRECT_TELEGRAM_MAX_BYTES="50000000"
+          LOCAL_BOT_API_MAX_BYTES="2000000000"
+          TELEGRAM_TARGET_MAX_BYTES="1950000000"
           MAX_FILE_BYTES="$DIRECT_TELEGRAM_MAX_BYTES"
-          YTDLP_MAX_FILESIZE="1500M"
+          YTDLP_MAX_FILESIZE="2000M"
           CONCURRENT_FRAGMENTS="4"
           LOCAL_BOT_API_STARTED="0"
 
@@ -333,6 +334,233 @@ jobs:
             return 0
           }
 
+          get_media_duration_seconds() {
+            local file_path="$1"
+
+            ffprobe -v error \
+              -show_entries format=duration \
+              -of default=noprint_wrappers=1:nokey=1 \
+              "$file_path" 2>/dev/null | head -n 1 || true
+          }
+
+          get_audio_bitrate_bps() {
+            local file_path="$1"
+            local audio_bitrate
+
+            audio_bitrate="$(
+              ffprobe -v error \
+                -select_streams a:0 \
+                -show_entries stream=bit_rate \
+                -of default=noprint_wrappers=1:nokey=1 \
+                "$file_path" 2>/dev/null | head -n 1 || true
+            )"
+
+            if echo "$audio_bitrate" | grep -Eq '^[0-9]+$'; then
+              echo "$audio_bitrate"
+            else
+              echo "128000"
+            fi
+          }
+
+          get_video_height() {
+            local file_path="$1"
+            local video_height
+
+            video_height="$(
+              ffprobe -v error \
+                -select_streams v:0 \
+                -show_entries stream=height \
+                -of default=noprint_wrappers=1:nokey=1 \
+                "$file_path" 2>/dev/null | head -n 1 || true
+            )"
+
+            if echo "$video_height" | grep -Eq '^[0-9]+$'; then
+              echo "$video_height"
+            else
+              echo "0"
+            fi
+          }
+
+          calc_target_video_bitrate_kbps() {
+            local duration_seconds="$1"
+            local target_bytes="$2"
+            local audio_bitrate_bps="$3"
+
+            python3 - "$duration_seconds" "$target_bytes" "$audio_bitrate_bps" <<'PY'
+import sys
+
+try:
+    duration = float(sys.argv[1])
+    target_bytes = int(sys.argv[2])
+    audio_bps = int(sys.argv[3])
+except Exception:
+    print(0)
+    raise SystemExit
+
+if duration <= 0 or target_bytes <= 0:
+    print(0)
+    raise SystemExit
+
+# Keep a small safety margin for MP4 container overhead.
+target_total_bps = (target_bytes * 8.0 / duration) * 0.97
+video_bps = target_total_bps - audio_bps
+
+video_kbps = int(video_bps / 1000)
+
+if video_kbps < 150:
+    video_kbps = 150
+
+print(video_kbps)
+PY
+          }
+
+          compress_media_to_fit_telegram_limit() {
+            set +e
+
+            local file_path="$1"
+
+            if [ ! -f "$file_path" ]; then
+              echo "ERROR: Size-fit input file is missing."
+              return 1
+            fi
+
+            local original_size
+            original_size="$(stat -c%s "$file_path" 2>/dev/null || echo 0)"
+
+            if [ "$original_size" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
+              echo "SIZE_FIT_REQUIRED=0"
+              return 0
+            fi
+
+            echo "SIZE_FIT_REQUIRED=1"
+            echo "SIZE_FIT_ORIGINAL_BYTES=${original_size}"
+            echo "SIZE_FIT_LIMIT_BYTES=${LOCAL_BOT_API_MAX_BYTES}"
+            echo "SIZE_FIT_TARGET_BYTES=${TELEGRAM_TARGET_MAX_BYTES}"
+
+            local duration_seconds
+            local audio_bitrate_bps
+            local video_height
+            local target_video_kbps
+
+            duration_seconds="$(get_media_duration_seconds "$file_path")"
+            audio_bitrate_bps="$(get_audio_bitrate_bps "$file_path")"
+            video_height="$(get_video_height "$file_path")"
+            target_video_kbps="$(calc_target_video_bitrate_kbps "$duration_seconds" "$TELEGRAM_TARGET_MAX_BYTES" "$audio_bitrate_bps")"
+
+            echo "SIZE_FIT_DURATION_SECONDS=${duration_seconds:-unknown}"
+            echo "SIZE_FIT_AUDIO_BITRATE_BPS=${audio_bitrate_bps}"
+            echo "SIZE_FIT_SOURCE_HEIGHT=${video_height}"
+            echo "SIZE_FIT_TARGET_VIDEO_KBPS=${target_video_kbps}"
+
+            if ! echo "$target_video_kbps" | grep -Eq '^[0-9]+$'; then
+              echo "ERROR: Could not calculate target video bitrate."
+              return 1
+            fi
+
+            if [ "$target_video_kbps" -le 0 ]; then
+              echo "ERROR: Invalid target video bitrate."
+              return 1
+            fi
+
+            local target_height
+            local tmp_output
+            local output_size
+            local scale_filter
+            local candidate_heights
+
+            candidate_heights="2160 1440 1080 720 480 360"
+
+            for target_height in $candidate_heights; do
+              if [ "$video_height" -gt 0 ] && [ "$target_height" -gt "$video_height" ]; then
+                continue
+              fi
+
+              tmp_output="${file_path}.fit-${target_height}.tmp.mp4"
+              rm -f "$tmp_output"
+
+              echo "SIZE_FIT_ATTEMPT_HEIGHT=${target_height}"
+
+              scale_filter="scale=-2:${target_height}:force_original_aspect_ratio=decrease,format=yuv420p"
+
+              ffmpeg -hide_banner -loglevel error -y \
+                -i "$file_path" \
+                -map 0:v:0 -map 0:a:0? \
+                -vf "$scale_filter" \
+                -c:v libx264 \
+                -preset veryfast \
+                -b:v "${target_video_kbps}k" \
+                -maxrate "${target_video_kbps}k" \
+                -bufsize "$((target_video_kbps * 2))k" \
+                -c:a copy \
+                -movflags +faststart \
+                "$tmp_output"
+
+              local rc=$?
+
+              if [ "$rc" -ne 0 ]; then
+                echo "SIZE_FIT_FFMPEG_FAILED=1"
+                echo "SIZE_FIT_HEIGHT=${target_height}"
+                echo "SIZE_FIT_RC=${rc}"
+                rm -f "$tmp_output"
+                continue
+              fi
+
+              if [ ! -f "$tmp_output" ]; then
+                echo "SIZE_FIT_OUTPUT_MISSING=1"
+                echo "SIZE_FIT_HEIGHT=${target_height}"
+                continue
+              fi
+
+              output_size="$(stat -c%s "$tmp_output" 2>/dev/null || echo 0)"
+
+              echo "SIZE_FIT_OUTPUT_BYTES=${output_size}"
+              echo "SIZE_FIT_OUTPUT_HEIGHT=${target_height}"
+
+              if [ "$output_size" -gt 0 ] && [ "$output_size" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
+                mv "$tmp_output" "$file_path"
+                echo "SIZE_FIT_SUCCESS=1"
+                echo "SIZE_FIT_FINAL_BYTES=${output_size}"
+                echo "SIZE_FIT_FINAL_HEIGHT=${target_height}"
+                echo "SIZE_FIT_AUDIO_MODE=copy"
+                return 0
+              fi
+
+              rm -f "$tmp_output"
+            done
+
+            echo "SIZE_FIT_SUCCESS=0"
+            echo "ERROR: Could not reduce media below Telegram Local Bot API limit without lowering audio."
+            return 1
+          }
+
+          ensure_media_fits_telegram_limit() {
+            local file_path="$1"
+
+            if [ ! -f "$file_path" ]; then
+              echo "ERROR: Telegram size check file is missing."
+              return 1
+            fi
+
+            local size_bytes
+            size_bytes="$(stat -c%s "$file_path" 2>/dev/null || echo 0)"
+
+            if [ "$size_bytes" -le 0 ]; then
+              echo "ERROR: Telegram size check file is empty."
+              return 1
+            fi
+
+            echo "TELEGRAM_SIZE_CHECK_BYTES=${size_bytes}"
+            echo "TELEGRAM_SIZE_LIMIT_BYTES=${LOCAL_BOT_API_MAX_BYTES}"
+
+            if [ "$size_bytes" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
+              echo "TELEGRAM_SIZE_CHECK=ok"
+              return 0
+            fi
+
+            compress_media_to_fit_telegram_limit "$file_path"
+            return $?
+          }
+
           start_local_bot_api_server() {
             if [ "${LOCAL_BOT_API_STARTED:-0}" = "1" ]; then
               return 0
@@ -570,6 +798,14 @@ jobs:
             file_path="$final_file"
 
             echo "NORMALIZED_FILE=${file_path}"
+
+            ensure_media_fits_telegram_limit "$file_path"
+            local fit_rc=$?
+
+            if [ "$fit_rc" -ne 0 ]; then
+              echo "Normalized file exceeded Telegram limit and could not be reduced safely. Trying a lower or alternate format."
+              return 2
+            fi
 
             send_to_telegram "$file_path" "$success_height" "$attempt_label"
             local send_rc=$?
