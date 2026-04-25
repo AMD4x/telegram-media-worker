@@ -103,6 +103,40 @@ jobs:
             esac
           }
 
+          progress_bar_text() {
+            local percent="$1"
+            local length=10
+            local filled=0
+            local empty=0
+            local bar=""
+            local i=0
+
+            if ! echo "$percent" | grep -Eq '^[0-9]+$'; then
+              percent=0
+            fi
+
+            if [ "$percent" -lt 0 ]; then
+              percent=0
+            fi
+
+            if [ "$percent" -gt 100 ]; then
+              percent=100
+            fi
+
+            filled=$((percent * length / 100))
+            empty=$((length - filled))
+
+            for i in $(seq 1 "$filled" 2>/dev/null); do
+              bar="${bar}█"
+            done
+
+            for i in $(seq 1 "$empty" 2>/dev/null); do
+              bar="${bar}░"
+            done
+
+            printf "%s" "$bar"
+          }
+
           telegram_edit_progress() {
             local percent="$1"
             local label="$2"
@@ -115,13 +149,16 @@ jobs:
             local safe_label
             local safe_detail
             local safe_run_url
+            local bar
             local text
 
             safe_label="$(printf "%s" "$label" | telegram_escape_html)"
             safe_detail="$(printf "%s" "$detail" | tr "_" " " | telegram_escape_html)"
             safe_run_url="$(printf "%s" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" | telegram_escape_html)"
+            bar="$(progress_bar_text "$percent")"
 
-            printf -v text '🐙 <b>GitHub Remote</b>\n\n📊 <code>%s%%</code>\n🧭 <b>Status:</b> %s\nℹ️ <i>%s</i>\n🆔 <code>%s</code>\n🔗 <a href="%s">Open Run</a>' \
+            printf -v text '🐙 <b>GitHub Remote</b>\n\n📊 <code>[%s] %s%%</code>\n🧭 <b>Status:</b> %s\nℹ️ <i>%s</i>\n🆔 <code>%s</code>\n🔗 <a href="%s">Open Run</a>' \
+              "$bar" \
               "$percent" \
               "$safe_label" \
               "$safe_detail" \
