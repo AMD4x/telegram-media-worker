@@ -105,16 +105,27 @@ jobs:
           echo ""
           echo "Checking latest Deno release from GitHub..."
           LATEST_DENO="$(
-            curl -fsSL \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${GH_TOKEN_FOR_API}" \
-              "https://api.github.com/repos/denoland/deno/releases/latest" \
-            | python3 - <<'PY'
+            python3 - <<'PY'
           import json
-          import sys
+          import os
+          import urllib.request
 
-          data = json.load(sys.stdin)
-          tag = data.get("tag_name", "").strip()
+          token = os.environ.get("GH_TOKEN_FOR_API", "").strip()
+          url = "https://api.github.com/repos/denoland/deno/releases/latest"
+
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "tg-video-worker-version-check",
+                  **({"Authorization": f"Bearer {token}"} if token else {}),
+              },
+          )
+
+          with urllib.request.urlopen(request, timeout=30) as response:
+              data = json.load(response)
+
+          tag = str(data.get("tag_name", "")).strip()
 
           if not tag:
               raise SystemExit("No Deno latest tag found")
