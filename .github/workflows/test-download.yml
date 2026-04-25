@@ -24,7 +24,7 @@ jobs:
   probe_video:
     name: Probe video slot ${{ matrix.slot }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
 
     strategy:
       fail-fast: false
@@ -185,6 +185,34 @@ jobs:
             echo "YOUTUBE_CLIENT=$YOUTUBE_CLIENT" >> "$STATUS_FILE"
           fi
 
+          echo ""
+          echo "=============================="
+          echo "SLOT=${SLOT} LIST_FORMATS_DIAGNOSTIC"
+          echo "=============================="
+
+          set +e
+          python3 -m yt_dlp \
+            --no-playlist \
+            --force-ipv4 \
+            --geo-bypass \
+            --socket-timeout 20 \
+            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --referer "$REFERER_URL" \
+            --add-header "Accept-Language:en-US,en;q=0.9" \
+            --list-formats \
+            "${COOKIES_ARGS[@]}" \
+            "${EXTRACTOR_ARGS[@]}" \
+            "$WORK_URL" > "work/formats-slot-${SLOT}.log" 2>&1
+          LF_RC=$?
+          set -e
+
+          echo "LIST_FORMATS_RC=${LF_RC}"
+          cat "work/formats-slot-${SLOT}.log" || true
+
+          {
+            echo "LIST_FORMATS_RC=${LF_RC}"
+          } >> "$STATUS_FILE"
+
           HEIGHTS=""
 
           if [ "$MAX_HEIGHT" -ge 2160 ] 2>/dev/null; then
@@ -220,7 +248,7 @@ jobs:
             rm -f work/video.*
 
             if [ "$IS_YOUTUBE" = "1" ]; then
-              FORMAT_SELECTOR="bv*[height<=${HEIGHT}]+ba/b[height<=${HEIGHT}]/bv*+ba/best/22/18"
+              FORMAT_SELECTOR="bv*[height<=${HEIGHT}]+ba/b[height<=${HEIGHT}]/b/best"
             else
               FORMAT_SELECTOR="bestvideo[height<=${HEIGHT}]+bestaudio/best[height<=${HEIGHT}]/bestvideo+bestaudio/best"
             fi
@@ -299,44 +327,75 @@ jobs:
             exit 0
           fi
 
-          if [ "$IS_YOUTUBE" = "1" ]; then
-            echo ""
-            echo "=============================="
-            echo "SLOT=${SLOT} LIST_FORMATS_DIAGNOSTIC"
-            echo "=============================="
+          echo ""
+          echo "=============================="
+          echo "SLOT=${SLOT} FALLBACK_DEFAULT_DOWNLOAD"
+          echo "=============================="
 
-            set +e
-            python3 -m yt_dlp \
-              --no-playlist \
-              --force-ipv4 \
-              --geo-bypass \
-              --socket-timeout 20 \
-              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-              --referer "$REFERER_URL" \
-              --add-header "Accept-Language:en-US,en;q=0.9" \
-              --list-formats \
-              "${COOKIES_ARGS[@]}" \
-              "${EXTRACTOR_ARGS[@]}" \
-              "$WORK_URL" > "work/formats-slot-${SLOT}.log" 2>&1
-            LF_RC=$?
-            set -e
+          rm -f work/video.*
 
-            echo "LIST_FORMATS_RC=${LF_RC}"
-            cat "work/formats-slot-${SLOT}.log" || true
+          set +e
+          python3 -m yt_dlp \
+            --no-playlist \
+            --no-warnings \
+            --force-ipv4 \
+            --geo-bypass \
+            --socket-timeout 20 \
+            --retries 1 \
+            --fragment-retries 1 \
+            --concurrent-fragments "$CONCURRENT_FRAGMENTS" \
+            --merge-output-format mp4 \
+            --remux-video mp4 \
+            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --referer "$REFERER_URL" \
+            --add-header "Accept-Language:en-US,en;q=0.9" \
+            --max-filesize 47M \
+            -S "res:${MAX_HEIGHT},ext:mp4:m4a" \
+            -o "work/video.%(ext)s" \
+            "${COOKIES_ARGS[@]}" \
+            "${EXTRACTOR_ARGS[@]}" \
+            "$WORK_URL" > "work/fallback-slot-${SLOT}.log" 2>&1
+          FB_RC=$?
+          set -e
 
-            {
-              echo "LIST_FORMATS_RC=${LF_RC}"
-            } >> "$STATUS_FILE"
+          echo "FALLBACK_RC=${FB_RC}"
+          cat "work/fallback-slot-${SLOT}.log" || true
+
+          FILE="$(find work -maxdepth 1 -type f -name "video.*" | head -n 1 || true)"
+
+          if [ "$FB_RC" -eq 0 ] && [ -n "$FILE" ] && [ -f "$FILE" ]; then
+            SIZE_BYTES="$(stat -c%s "$FILE")"
+
+            echo "FALLBACK_SUCCESS_SIZE_BYTES=${SIZE_BYTES}"
+
+            if [ "$SIZE_BYTES" -gt 0 ] && [ "$SIZE_BYTES" -le "$MAX_FILE_BYTES" ]; then
+              mv "$FILE" "work/video-${SLOT}.mp4"
+
+              {
+                echo "RESULT=success"
+                echo "SUCCESS_PLATFORM=${PLATFORM}"
+                echo "SUCCESS_HEIGHT=fallback"
+                echo "SUCCESS_SIZE_BYTES=${SIZE_BYTES}"
+              } >> "$STATUS_FILE"
+
+              echo "ATTEMPT_SUCCESS=SLOT_${SLOT}"
+              echo "SUCCESS_PLATFORM=$PLATFORM"
+              echo "SUCCESS_HEIGHT=fallback"
+              echo "SUCCESS_SIZE_BYTES=$SIZE_BYTES"
+
+              exit 0
+            fi
           fi
 
           {
+            echo "FALLBACK_RC=${FB_RC}"
             echo "RESULT=failed"
-            echo "REASON=all_heights_failed"
+            echo "REASON=all_methods_failed"
           } >> "$STATUS_FILE"
 
           echo "ATTEMPT_FAILED=SLOT_${SLOT}"
           echo "PLATFORM=$PLATFORM"
-          echo "ALL_HEIGHTS_FAILED=1"
+          echo "ALL_METHODS_FAILED=1"
 
           exit 0
 
@@ -377,6 +436,24 @@ jobs:
           echo ""
           echo "Status files:"
           cat collected/status-*.txt || true
+
+          echo ""
+          echo "Formats diagnostics summary:"
+          for f in collected/formats-slot-*.log; do
+            [ -f "$f" ] || continue
+            echo ""
+            echo "----- ${f} -----"
+            grep -Ei 'Available formats|ID +EXT|mp4|webm|m4a|storyboard|images|missing|SABR|PO Token|DRM|ERROR|WARNING' "$f" | head -n 80 || true
+          done
+
+          echo ""
+          echo "Fallback diagnostics summary:"
+          for f in collected/fallback-slot-*.log; do
+            [ -f "$f" ] || continue
+            echo ""
+            echo "----- ${f} -----"
+            grep -Ei 'Downloading|Destination|Merging|ERROR|WARNING|has already been downloaded|size|format|Requested' "$f" | head -n 80 || true
+          done
 
           VIDEO_COUNT="$(find collected -type f -name 'video-*.mp4' -size +0c | wc -l | tr -d ' ')"
 
