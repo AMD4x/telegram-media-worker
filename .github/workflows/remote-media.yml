@@ -305,6 +305,20 @@ jobs:
             echo "DOWNLOAD_SUCCESS_ATTEMPT=${attempt_label}"
             echo "DOWNLOAD_SIZE_BYTES=${size_bytes}"
 
+            timestamp="$(TZ=Africa/Cairo date '+%Y-%m-%d_%H-%M-%S')"
+            file_ext="${file_path##*.}"
+
+            if [ -z "$file_ext" ] || [ "$file_ext" = "$file_path" ]; then
+              file_ext="mp4"
+            fi
+
+            renamed_file="work/media_${timestamp}_${PLATFORM}.${file_ext}"
+
+            mv "$file_path" "$renamed_file"
+            file_path="$renamed_file"
+
+            echo "RENAMED_FILE=${file_path}"
+
             set +e
             send_to_telegram "$file_path" "$success_height" "$attempt_label"
             local send_rc=$?
