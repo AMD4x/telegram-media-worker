@@ -50,13 +50,15 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          MEDIA_URL_INPUT: ${{ inputs.media_url }}
+          MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
         run: |
           set -e
 
           mkdir -p work
 
-          SOURCE_URL="${{ inputs.media_url }}"
-          MAX_HEIGHT="${{ inputs.max_height }}"
+          SOURCE_URL="$MEDIA_URL_INPUT"
+          MAX_HEIGHT="$MAX_HEIGHT_INPUT"
           DIRECT_TELEGRAM_MAX_BYTES="50000000"
           LOCAL_BOT_API_MAX_BYTES="1500000000"
           MAX_FILE_BYTES="$DIRECT_TELEGRAM_MAX_BYTES"
