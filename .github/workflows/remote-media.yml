@@ -386,6 +386,10 @@ jobs:
 
           echo "::add-mask::${SOURCE_URL}"
 
+          if [ -n "${OUTPUT_FILENAME:-}" ]; then
+            echo "::add-mask::${OUTPUT_FILENAME}"
+          fi
+
           if [ -z "${TELEGRAM_TOKEN:-}" ]; then
             echo "ERROR: Missing TELEGRAM_TOKEN secret."
             exit 1
@@ -723,9 +727,12 @@ jobs:
               return 1
             fi
 
+            echo "::add-mask::${zip_name}"
+            echo "::add-mask::${zip_path}"
+            echo "::add-mask::${inner_name}"
             echo "DOCUMENT_ZIP_CREATED=1"
-            echo "DOCUMENT_ZIP_FILE=${zip_path}"
-            echo "DOCUMENT_ZIP_INNER_NAME=${inner_name}"
+            echo "DOCUMENT_ZIP_FILE=masked"
+            echo "DOCUMENT_ZIP_INNER_NAME=masked"
             echo "DOCUMENT_ZIP_SIZE_BYTES=${zip_size}"
 
             DOCUMENT_ZIP_FILE="$zip_path"
@@ -820,7 +827,7 @@ jobs:
             fi
 
             echo "DIRECT_DOCUMENT_DOWNLOAD=success"
-            echo "DIRECT_DOCUMENT_FILE=${output_file}"
+            echo "DIRECT_DOCUMENT_FILE=masked"
             echo "DIRECT_DOCUMENT_SIZE_BYTES=${size_bytes}"
 
             handle_downloaded_file "$output_file" "document" "direct-document"
@@ -1320,7 +1327,7 @@ jobs:
 
             echo "SENDING_TO_TELEGRAM=1"
             echo "TELEGRAM_SEND_MODE=${send_mode}"
-            echo "SELECTED_FILE=${file_path}"
+            echo "SELECTED_FILE=masked"
             echo "SELECTED_HEIGHT=${success_height}"
             echo "SELECTED_ATTEMPT=${attempt_label}"
             echo "SELECTED_SIZE_BYTES=${size_bytes}"
@@ -1536,7 +1543,7 @@ jobs:
 
             file_path="$source_file"
 
-            echo "RENAMED_FILE=${file_path}"
+            echo "RENAMED_FILE=masked"
 
             if [ "${SEND_AS:-video}" = "document" ]; then
               FINAL_SIZE_STATUS="OK"
@@ -1587,7 +1594,7 @@ jobs:
             rm -f "$file_path"
             file_path="$final_file"
 
-            echo "NORMALIZED_FILE=${file_path}"
+            echo "NORMALIZED_FILE=masked"
 
             progress_stage "normalized" "68" "Processed" "Media_normalized"
 
