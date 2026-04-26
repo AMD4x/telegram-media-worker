@@ -92,6 +92,7 @@ jobs:
 
           DIRECT_TELEGRAM_MAX_BYTES="50000000"
           LOCAL_BOT_API_MAX_BYTES="2000000000"
+          DOCUMENT_ZIP_SOURCE_MAX_BYTES="1990000000"
           TELEGRAM_TARGET_MAX_BYTES="1950000000"
           MAX_FILE_BYTES="$DIRECT_TELEGRAM_MAX_BYTES"
           YTDLP_MAX_FILESIZE="2000M"
@@ -598,6 +599,140 @@ jobs:
           PY
           }
 
+          sanitize_zip_file_name() {
+            python3 - "$1" "$2" <<'PY'
+          import os
+          import re
+          import sys
+          import urllib.parse
+
+          requested = urllib.parse.unquote((sys.argv[1] or '').strip())
+          fallback = urllib.parse.unquote((sys.argv[2] or '').strip())
+
+          def clean(value):
+              value = value.replace('\\', '/')
+              value = os.path.basename(value)
+              value = re.sub(r'[\x00-\x1f\x7f]', '', value)
+              value = re.sub(r'[\/*?:"<>|]', '', value)
+              value = re.sub(r'\s+', ' ', value).strip().strip('.')
+              return value
+
+          fallback = clean(fallback) or 'telegram_document.zip'
+          name = clean(requested) or fallback
+
+          base, ext = os.path.splitext(name)
+          fallback_base, _fallback_ext = os.path.splitext(fallback)
+
+          if ext.lower() == '.zip':
+              zip_name = name
+          else:
+              zip_name = f"{base or name or fallback_base or 'telegram_document'}.zip"
+
+          base, ext = os.path.splitext(zip_name)
+          if len(zip_name) > 120:
+              base = base[:max(1, 120 - len(ext))].rstrip().strip('.')
+              zip_name = f"{base or 'telegram_document'}{ext}"
+
+          print(zip_name or 'telegram_document.zip')
+          PY
+          }
+
+          zip_inner_file_name() {
+            python3 - "$1" "$2" <<'PY'
+          import os
+          import re
+          import sys
+
+          zip_name = sys.argv[1] or 'telegram_document.zip'
+          source_name = sys.argv[2] or 'telegram_document.bin'
+
+          base, _zip_ext = os.path.splitext(os.path.basename(zip_name))
+          _source_base, source_ext = os.path.splitext(os.path.basename(source_name))
+
+          if not source_ext or source_ext.lower() == '.zip':
+              source_ext = '.bin'
+
+          base = re.sub(r'[\x00-\x1f\x7f]', '', base)
+          base = re.sub(r'[\/*?:"<>|]', '', base)
+          base = re.sub(r'\s+', ' ', base).strip().strip('.') or 'telegram_document'
+
+          print(f"{base}{source_ext}"[:120])
+          PY
+          }
+
+          zip_document_for_telegram() {
+            set +e
+
+            local source_path="$1"
+            local requested_name="$2"
+            local fallback_name="$3"
+
+            if [ ! -f "$source_path" ]; then
+              echo "ERROR: ZIP source file is missing."
+              return 1
+            fi
+
+            local source_size
+            source_size="$(stat -c%s "$source_path" 2>/dev/null || echo 0)"
+
+            if [ "$source_size" -le 0 ]; then
+              echo "ERROR: ZIP source file is empty."
+              return 1
+            fi
+
+            if [ "$source_size" -gt "$DOCUMENT_ZIP_SOURCE_MAX_BYTES" ]; then
+              echo "ERROR: Source document is too large to wrap safely as ZIP."
+              echo "DOCUMENT_ZIP_SOURCE_BYTES=${source_size}"
+              echo "DOCUMENT_ZIP_SOURCE_LIMIT_BYTES=${DOCUMENT_ZIP_SOURCE_MAX_BYTES}"
+              return 1
+            fi
+
+            local zip_name
+            local zip_path
+            local inner_name
+            local zip_size
+
+            zip_name="$(sanitize_zip_file_name "$requested_name" "$fallback_name")"
+            zip_path="work/${zip_name}"
+            inner_name="$(zip_inner_file_name "$zip_name" "$(basename "$source_path")")"
+
+            rm -f "$zip_path"
+
+            progress_stage "zipping_document" "68" "Packing" "Packing_document_zip"
+
+            python3 - "$source_path" "$zip_path" "$inner_name" <<'PY'
+          import sys
+          import zipfile
+
+          source_path, zip_path, inner_name = sys.argv[1:4]
+
+          with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_STORED, allowZip64=True) as zf:
+              zf.write(source_path, arcname=inner_name)
+          PY
+
+            if [ ! -f "$zip_path" ]; then
+              echo "ERROR: ZIP output file is missing."
+              return 1
+            fi
+
+            zip_size="$(stat -c%s "$zip_path" 2>/dev/null || echo 0)"
+
+            if [ "$zip_size" -le 0 ]; then
+              echo "ERROR: ZIP output file is empty."
+              rm -f "$zip_path"
+              return 1
+            fi
+
+            echo "DOCUMENT_ZIP_CREATED=1"
+            echo "DOCUMENT_ZIP_FILE=${zip_path}"
+            echo "DOCUMENT_ZIP_INNER_NAME=${inner_name}"
+            echo "DOCUMENT_ZIP_SIZE_BYTES=${zip_size}"
+
+            DOCUMENT_ZIP_FILE="$zip_path"
+            DOCUMENT_ZIP_INNER_NAME="$inner_name"
+            return 0
+          }
+
           is_probably_direct_file_headers() {
             local header_file="$1"
             local file_name="$2"
@@ -634,7 +769,7 @@ jobs:
 
             header_file="work/direct-document.headers"
             file_name="$(safe_document_file_name_from_url "$SOURCE_URL")"
-            file_name="$(sanitize_document_file_name "${OUTPUT_FILENAME:-}" "$file_name")"
+            file_name="$(sanitize_document_file_name "" "$file_name")"
             output_file="work/${file_name}"
 
             rm -f "$header_file" "$output_file"
@@ -663,7 +798,7 @@ jobs:
               --max-redirs 10 \
               --retry 2 \
               --retry-delay 2 \
-              --max-filesize "$LOCAL_BOT_API_MAX_BYTES" \
+              --max-filesize "$DOCUMENT_ZIP_SOURCE_MAX_BYTES" \
               -o "$output_file" \
               "$SOURCE_URL"; then
               echo "DIRECT_DOCUMENT_DOWNLOAD_FAILED=1"
@@ -1387,7 +1522,7 @@ jobs:
 
             if [ "${SEND_AS:-video}" = "document" ]; then
               fallback_document_name="$(basename "$file_path")"
-              source_file="work/$(sanitize_document_file_name "${OUTPUT_FILENAME:-}" "$fallback_document_name")"
+              source_file="work/$(sanitize_document_file_name "" "$fallback_document_name")"
             else
               source_file="work/source_${timestamp}_${PLATFORM}.${file_ext}"
             fi
@@ -1406,24 +1541,36 @@ jobs:
             if [ "${SEND_AS:-video}" = "document" ]; then
               FINAL_SIZE_STATUS="OK"
               INPUT_VIDEO_CODEC_FINAL="Original"
-              OUTPUT_VIDEO_CODEC_FINAL="Original"
+              OUTPUT_VIDEO_CODEC_FINAL="ZIP"
+              DOCUMENT_ZIP_FILE=""
+              DOCUMENT_ZIP_INNER_NAME=""
 
-              ensure_document_fits_telegram_limit "$file_path"
-              local document_fit_rc=$?
+              zip_document_for_telegram "$file_path" "${OUTPUT_FILENAME:-}" "$(basename "$file_path")"
+              local zip_rc=$?
 
-              if [ "$document_fit_rc" -ne 0 ]; then
-                echo "Document exceeded Telegram limit or failed size check."
+              if [ "$zip_rc" -ne 0 ] || [ -z "${DOCUMENT_ZIP_FILE:-}" ]; then
+                echo "Document ZIP creation failed."
                 exit 1
               fi
 
-              send_to_telegram "$file_path" "document" "$attempt_label"
+              DOWNLOAD_SIZE_BYTES_FINAL="$(stat -c%s "$file_path" 2>/dev/null || echo "$DOWNLOAD_SIZE_BYTES_FINAL")"
+
+              ensure_document_fits_telegram_limit "$DOCUMENT_ZIP_FILE"
+              local document_fit_rc=$?
+
+              if [ "$document_fit_rc" -ne 0 ]; then
+                echo "Document ZIP exceeded Telegram limit or failed size check."
+                exit 1
+              fi
+
+              send_to_telegram "$DOCUMENT_ZIP_FILE" "document" "$attempt_label"
               local document_send_rc=$?
 
               if [ "$document_send_rc" -eq 0 ]; then
                 exit 0
               fi
 
-              echo "Telegram document send failed after successful download."
+              echo "Telegram ZIP document send failed after successful download."
               exit 1
             fi
 
