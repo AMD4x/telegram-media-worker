@@ -319,14 +319,14 @@ jobs:
 
             printf -v text '%s
 
-🌐 <b>Source:</b> <code>%s</code>
-📄 <b>File:</b> <code>%s</code>
-📥 <b>Downloaded Size:</b> <code>%s</code>
-📦 <b>Final Size:</b> <code>%s</code> — %s
-🚀 <b>Send Mode:</b> <code>%s</code>
-📤 <b>Send Method:</b> <code>%s</code>
-🆔 <code>%s</code>
-🔗 <a href="%s">Open Run</a>' \
+            🌐 <b>Source:</b> <code>%s</code>
+            📄 <b>File:</b> <code>%s</code>
+            📥 <b>Downloaded Size:</b> <code>%s</code>
+            📦 <b>Final Size:</b> <code>%s</code> — %s
+            🚀 <b>Send Mode:</b> <code>%s</code>
+            📤 <b>Send Method:</b> <code>%s</code>
+            🆔 <code>%s</code>
+            🔗 <a href="%s">Open Run</a>' \
               "$title" \
               "$safe_platform" \
               "$safe_file_name" \
@@ -339,8 +339,7 @@ jobs:
               "$safe_run_url"
 
             if [ -n "$suffix" ]; then
-              text="$(printf '%s
-%s' "$text" "$suffix")"
+              text="$(printf '%s\n%s' "$text" "$suffix")"
             fi
 
             curl -sS \
