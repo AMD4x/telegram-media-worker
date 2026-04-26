@@ -20,6 +20,14 @@ on:
           - "720"
           - "480"
           - "360"
+      send_as:
+        description: "Send as"
+        required: true
+        default: "video"
+        type: choice
+        options:
+          - "video"
+          - "document"
       progress_chat_id:
         description: "Telegram progress chat id"
         required: false
@@ -60,6 +68,7 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           MEDIA_URL_INPUT: ${{ inputs.media_url }}
           MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
+          SEND_AS_INPUT: ${{ inputs.send_as }}
           PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
           PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
         run: |
@@ -69,6 +78,12 @@ jobs:
 
           SOURCE_URL="$MEDIA_URL_INPUT"
           MAX_HEIGHT="$MAX_HEIGHT_INPUT"
+          SEND_AS="$SEND_AS_INPUT"
+
+          if [ "$SEND_AS" != "document" ]; then
+            SEND_AS="video"
+          fi
+
           DIRECT_TELEGRAM_MAX_BYTES="50000000"
           LOCAL_BOT_API_MAX_BYTES="2000000000"
           TELEGRAM_TARGET_MAX_BYTES="1950000000"
@@ -270,6 +285,75 @@ jobs:
               -F "text=${text}" >/dev/null 2>&1 || true
           }
 
+          telegram_edit_document_summary() {
+            local title="$1"
+            local suffix="$2"
+            local size_bytes="$3"
+            local send_mode="$4"
+            local send_method="$5"
+            local file_name="$6"
+
+            if [ -z "${PROGRESS_CHAT_ID:-}" ] || [ -z "${PROGRESS_MESSAGE_ID:-}" ]; then
+              return 0
+            fi
+
+            local downloaded_size_text
+            local final_size_text
+            local send_mode_text
+            local safe_platform
+            local safe_file_name
+            local safe_send_mode
+            local safe_send_method
+            local safe_run_url
+            local text
+
+            downloaded_size_text="$(format_bytes_for_telegram "${DOWNLOAD_SIZE_BYTES_FINAL:-0}")"
+            final_size_text="$(format_bytes_for_telegram "${size_bytes:-0}")"
+            send_mode_text="$(telegram_send_mode_label "$send_mode")"
+
+            safe_platform="$(printf "%s" "${PLATFORM:-direct}" | telegram_escape_html)"
+            safe_file_name="$(printf "%s" "${file_name:-document}" | telegram_escape_html)"
+            safe_send_mode="$(printf "%s" "$send_mode_text" | telegram_escape_html)"
+            safe_send_method="$(printf "%s" "$send_method" | telegram_escape_html)"
+            safe_run_url="$(printf "%s" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" | telegram_escape_html)"
+
+            printf -v text '%s
+
+🌐 <b>Source:</b> <code>%s</code>
+📄 <b>File:</b> <code>%s</code>
+📥 <b>Downloaded Size:</b> <code>%s</code>
+📦 <b>Final Size:</b> <code>%s</code> — %s
+🚀 <b>Send Mode:</b> <code>%s</code>
+📤 <b>Send Method:</b> <code>%s</code>
+🆔 <code>%s</code>
+🔗 <a href="%s">Open Run</a>' \
+              "$title" \
+              "$safe_platform" \
+              "$safe_file_name" \
+              "$downloaded_size_text" \
+              "$final_size_text" \
+              "${FINAL_SIZE_STATUS:-OK}" \
+              "$safe_send_mode" \
+              "$safe_send_method" \
+              "$GITHUB_RUN_ID" \
+              "$safe_run_url"
+
+            if [ -n "$suffix" ]; then
+              text="$(printf '%s
+%s' "$text" "$suffix")"
+            fi
+
+            curl -sS \
+              --connect-timeout 10 \
+              --max-time 20 \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText" \
+              -F "chat_id=${PROGRESS_CHAT_ID}" \
+              -F "message_id=${PROGRESS_MESSAGE_ID}" \
+              -F "parse_mode=HTML" \
+              -F "disable_web_page_preview=true" \
+              -F "text=${text}" >/dev/null 2>&1 || true
+          }
+
           progress_stage "preparing" "10" "Preparing" "Preparing_worker"
 
           if [ "$MAX_HEIGHT" = "auto" ]; then
@@ -371,6 +455,7 @@ jobs:
           echo "NORMALIZED_URL=masked"
           echo "MAX_HEIGHT=${MAX_HEIGHT}"
           echo "MAX_HEIGHT_NUM=${MAX_HEIGHT_NUM}"
+          echo "SEND_AS=${SEND_AS}"
           echo "AUTO_MODE=${AUTO_MODE}"
           echo "REFERER_PLATFORM=${PLATFORM}"
 
@@ -451,6 +536,147 @@ jobs:
               -e 's#(/reel/)[0-9]+#\1<masked-id>#g' \
               -e 's#[0-9]{10,}#<masked-id>#g' \
               "$log_file"
+          }
+
+          safe_document_file_name_from_url() {
+            python3 - "$1" <<'PY'
+          import re
+          import sys
+          import urllib.parse
+
+          url = sys.argv[1]
+          path = urllib.parse.urlparse(url).path
+          name = urllib.parse.unquote(path.rsplit('/', 1)[-1]).strip()
+          name = re.sub(r'[\\/*?:"<>|]', '', name).strip()
+
+          if not name or '.' not in name:
+              name = 'telegram_document.bin'
+
+          print(name[:120])
+          PY
+          }
+
+          is_probably_direct_file_headers() {
+            local header_file="$1"
+            local file_name="$2"
+            local content_type
+
+            content_type="$(grep -i '^content-type:' "$header_file" 2>/dev/null | tail -n 1 | cut -d: -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs || true)"
+
+            if printf '%s' "$content_type" | grep -Eq 'text/html|application/xhtml|text/plain'; then
+              return 1
+            fi
+
+            if [ -n "$content_type" ]; then
+              return 0
+            fi
+
+            if printf '%s' "$file_name" | grep -Eq '\.[A-Za-z0-9]{1,8}$'; then
+              return 0
+            fi
+
+            return 1
+          }
+
+          try_direct_document_download() {
+            set +e
+
+            if [ "${SEND_AS:-video}" != "document" ]; then
+              return 1
+            fi
+
+            local header_file
+            local file_name
+            local output_file
+            local size_bytes
+
+            header_file="work/direct-document.headers"
+            file_name="$(safe_document_file_name_from_url "$SOURCE_URL")"
+            output_file="work/${file_name}"
+
+            rm -f "$header_file" "$output_file"
+
+            progress_stage "direct_document_probe" "30" "Checking" "Checking_direct_file_link"
+
+            if ! curl -fsSLI \
+              --connect-timeout 20 \
+              --max-time 60 \
+              --max-redirs 10 \
+              "$SOURCE_URL" > "$header_file" 2>/dev/null; then
+              echo "DIRECT_DOCUMENT_HEAD_FAILED=1"
+              return 1
+            fi
+
+            if ! is_probably_direct_file_headers "$header_file" "$file_name"; then
+              echo "DIRECT_DOCUMENT_PROBE=not_direct_file"
+              return 1
+            fi
+
+            progress_stage "downloading" "40" "Downloading" "Downloading_document"
+
+            if ! curl -fL \
+              --connect-timeout 20 \
+              --max-time 21600 \
+              --max-redirs 10 \
+              --retry 2 \
+              --retry-delay 2 \
+              --max-filesize "$LOCAL_BOT_API_MAX_BYTES" \
+              -o "$output_file" \
+              "$SOURCE_URL"; then
+              echo "DIRECT_DOCUMENT_DOWNLOAD_FAILED=1"
+              rm -f "$output_file"
+              return 1
+            fi
+
+            if [ ! -f "$output_file" ]; then
+              echo "DIRECT_DOCUMENT_OUTPUT_MISSING=1"
+              return 1
+            fi
+
+            size_bytes="$(stat -c%s "$output_file" 2>/dev/null || echo 0)"
+
+            if [ "$size_bytes" -le 0 ]; then
+              echo "DIRECT_DOCUMENT_EMPTY=1"
+              rm -f "$output_file"
+              return 1
+            fi
+
+            echo "DIRECT_DOCUMENT_DOWNLOAD=success"
+            echo "DIRECT_DOCUMENT_FILE=${output_file}"
+            echo "DIRECT_DOCUMENT_SIZE_BYTES=${size_bytes}"
+
+            handle_downloaded_file "$output_file" "document" "direct-document"
+            return $?
+          }
+
+          ensure_document_fits_telegram_limit() {
+            local file_path="$1"
+
+            if [ ! -f "$file_path" ]; then
+              echo "ERROR: Telegram document file is missing."
+              return 1
+            fi
+
+            local size_bytes
+            size_bytes="$(stat -c%s "$file_path" 2>/dev/null || echo 0)"
+
+            if [ "$size_bytes" -le 0 ]; then
+              echo "ERROR: Telegram document file is empty."
+              return 1
+            fi
+
+            echo "TELEGRAM_DOCUMENT_SIZE_CHECK_BYTES=${size_bytes}"
+            echo "TELEGRAM_DOCUMENT_LIMIT_BYTES=${LOCAL_BOT_API_MAX_BYTES}"
+
+            progress_stage "size_check" "72" "Checking" "Checking_document_size"
+
+            if [ "$size_bytes" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
+              echo "TELEGRAM_DOCUMENT_SIZE_CHECK=ok"
+              return 0
+            fi
+
+            echo "ERROR: Document is larger than Telegram Local Bot API limit."
+            return 1
           }
 
           normalize_media_for_sharing() {
@@ -921,6 +1147,63 @@ jobs:
             echo "SELECTED_ATTEMPT=${attempt_label}"
             echo "SELECTED_SIZE_BYTES=${size_bytes}"
 
+            if [ "${SEND_AS:-video}" = "document" ]; then
+              echo "REMOTE_DOCUMENT_READY=1"
+              echo "READY_TO_SEND=1"
+              echo "READY_SIZE_BYTES=${size_bytes}"
+              echo "READY_ATTEMPT=${attempt_label}"
+              echo "READY_SEND_MODE=${send_mode}"
+              echo "READY_SEND_METHOD=document"
+
+              progress_stage "ready_to_send" "90" "Ready" "Document_ready_to_send"
+
+              telegram_edit_document_summary \
+                "✅ <b>GitHub Document ready</b>" \
+                "⏳ <i>Sending to Telegram...</i>" \
+                "$size_bytes" \
+                "$send_mode" \
+                "Document" \
+                "$(basename "$file_path")"
+
+              # Give Telegram progress message enough time to update before the document arrives.
+              sleep 5
+
+              echo "PROGRESS_STAGE=sending"
+              echo "PROGRESS_PERCENT=95"
+              echo "PROGRESS_LABEL=Sending"
+              echo "PROGRESS_DETAIL=Sending_document_to_Telegram"
+
+              response_file="$RUNNER_TEMP/telegram-document-response.json"
+              http_code="$(telegram_send_document_request "$api_base" "$file_path" "$response_file")"
+
+              echo "TELEGRAM_DOCUMENT_HTTP_CODE=${http_code}"
+
+              if is_success_http_code "$http_code" && grep -q '"ok":true' "$response_file"; then
+                echo "TELEGRAM_SEND=success"
+                echo "TELEGRAM_SEND_METHOD=document"
+                echo "FINAL_RESULT=success"
+
+                echo "PROGRESS_STAGE=sent"
+                echo "PROGRESS_PERCENT=98"
+                echo "PROGRESS_LABEL=Finalizing"
+                echo "PROGRESS_DETAIL=Telegram_document_send_completed"
+
+                telegram_edit_document_summary \
+                  "✅ <b>GitHub Document completed</b>" \
+                  "" \
+                  "$size_bytes" \
+                  "$send_mode" \
+                  "Document" \
+                  "$(basename "$file_path")"
+
+                return 0
+              fi
+
+              echo "Telegram document send failed."
+              echo "Telegram response is hidden for public-log safety."
+              return 1
+            fi
+
             echo "REMOTE_MEDIA_READY=1"
             echo "READY_TO_SEND=1"
             echo "READY_SIZE_BYTES=${size_bytes}"
@@ -1066,6 +1349,30 @@ jobs:
             file_path="$source_file"
 
             echo "RENAMED_FILE=${file_path}"
+
+            if [ "${SEND_AS:-video}" = "document" ]; then
+              FINAL_SIZE_STATUS="OK"
+              INPUT_VIDEO_CODEC_FINAL="Original"
+              OUTPUT_VIDEO_CODEC_FINAL="Original"
+
+              ensure_document_fits_telegram_limit "$file_path"
+              local document_fit_rc=$?
+
+              if [ "$document_fit_rc" -ne 0 ]; then
+                echo "Document exceeded Telegram limit or failed size check."
+                exit 1
+              fi
+
+              send_to_telegram "$file_path" "document" "$attempt_label"
+              local document_send_rc=$?
+
+              if [ "$document_send_rc" -eq 0 ]; then
+                exit 0
+              fi
+
+              echo "Telegram document send failed after successful download."
+              exit 1
+            fi
 
             progress_stage "normalizing" "60" "Processing" "Normalizing_media"
 
@@ -1264,6 +1571,19 @@ jobs:
 
             return 1
           }
+
+          if [ "$SEND_AS" = "document" ]; then
+            set +e
+            try_direct_document_download
+            DIRECT_DOCUMENT_RC=$?
+            set -e
+
+            if [ "$DIRECT_DOCUMENT_RC" -eq 0 ]; then
+              exit 0
+            fi
+
+            echo "DIRECT_DOCUMENT_FALLBACK_TO_YTDLP=1"
+          fi
 
           if [ "$IS_YOUTUBE" = "1" ]; then
             echo "MODE=youtube"
