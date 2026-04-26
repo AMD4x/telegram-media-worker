@@ -28,6 +28,10 @@ on:
         options:
           - "video"
           - "document"
+      output_filename:
+        description: "Output document filename"
+        required: false
+        type: string
       progress_chat_id:
         description: "Telegram progress chat id"
         required: false
@@ -69,6 +73,7 @@ jobs:
           MEDIA_URL_INPUT: ${{ inputs.media_url }}
           MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
           SEND_AS_INPUT: ${{ inputs.send_as }}
+          OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
           PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
           PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
         run: |
@@ -79,6 +84,7 @@ jobs:
           SOURCE_URL="$MEDIA_URL_INPUT"
           MAX_HEIGHT="$MAX_HEIGHT_INPUT"
           SEND_AS="$SEND_AS_INPUT"
+          OUTPUT_FILENAME="${OUTPUT_FILENAME_INPUT:-}"
 
           if [ "$SEND_AS" != "document" ]; then
             SEND_AS="video"
@@ -555,6 +561,43 @@ jobs:
           PY
           }
 
+          sanitize_document_file_name() {
+            python3 - "$1" "$2" <<'PY'
+          import os
+          import re
+          import sys
+          import urllib.parse
+
+          requested = urllib.parse.unquote((sys.argv[1] or '').strip())
+          fallback = urllib.parse.unquote((sys.argv[2] or '').strip())
+
+          def clean(value):
+              value = value.replace('\\', '/')
+              value = os.path.basename(value)
+              value = re.sub(r'[\x00-\x1f\x7f]', '', value)
+              value = re.sub(r'[\/*?:"<>|]', '', value)
+              value = re.sub(r'\s+', ' ', value).strip().strip('.')
+              return value
+
+          fallback = clean(fallback) or 'telegram_document.bin'
+          name = clean(requested) or fallback
+
+          base, ext = os.path.splitext(name)
+          fallback_base, fallback_ext = os.path.splitext(fallback)
+
+          if not ext:
+              ext = fallback_ext or '.bin'
+              name = f"{base or fallback_base or 'telegram_document'}{ext}"
+
+          base, ext = os.path.splitext(name)
+          if len(name) > 120:
+              base = base[:max(1, 120 - len(ext))].rstrip().strip('.')
+              name = f"{base or 'telegram_document'}{ext}"
+
+          print(name or 'telegram_document.bin')
+          PY
+          }
+
           is_probably_direct_file_headers() {
             local header_file="$1"
             local file_name="$2"
@@ -591,6 +634,7 @@ jobs:
 
             header_file="work/direct-document.headers"
             file_name="$(safe_document_file_name_from_url "$SOURCE_URL")"
+            file_name="$(sanitize_document_file_name "${OUTPUT_FILENAME:-}" "$file_name")"
             output_file="work/${file_name}"
 
             rm -f "$header_file" "$output_file"
@@ -1341,10 +1385,20 @@ jobs:
               file_ext="mp4"
             fi
 
-            source_file="work/source_${timestamp}_${PLATFORM}.${file_ext}"
+            if [ "${SEND_AS:-video}" = "document" ]; then
+              fallback_document_name="$(basename "$file_path")"
+              source_file="work/$(sanitize_document_file_name "${OUTPUT_FILENAME:-}" "$fallback_document_name")"
+            else
+              source_file="work/source_${timestamp}_${PLATFORM}.${file_ext}"
+            fi
+
             final_file="work/media_${timestamp}_${PLATFORM}.mp4"
 
-            mv "$file_path" "$source_file"
+            if [ "$file_path" != "$source_file" ]; then
+              rm -f "$source_file"
+              mv "$file_path" "$source_file"
+            fi
+
             file_path="$source_file"
 
             echo "RENAMED_FILE=${file_path}"
