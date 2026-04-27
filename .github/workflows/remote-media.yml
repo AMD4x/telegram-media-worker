@@ -481,8 +481,8 @@ jobs:
           echo "PLATFORM=${PLATFORM}"
           echo "ORIGINAL_URL=masked"
           echo "NORMALIZED_URL=masked"
-          echo "MAX_HEIGHT=${MAX_HEIGHT}"
-          echo "MAX_HEIGHT_NUM=${MAX_HEIGHT_NUM}"
+          echo "MAX_HEIGHT=masked"
+          echo "MAX_HEIGHT_NUM=masked"
           echo "SEND_AS=${SEND_AS}"
           echo "AUTO_MODE=${AUTO_MODE}"
           echo "REFERER_PLATFORM=${PLATFORM}"
@@ -549,7 +549,7 @@ jobs:
 
           HEIGHTS="$HEIGHTS 360"
 
-          echo "HEIGHTS=${HEIGHTS}"
+          echo "HEIGHTS=masked"
 
           progress_stage "selecting_formats" "28" "Selecting" "Selecting_download_formats"
 
@@ -986,7 +986,7 @@ jobs:
               if [ "$part_size" -le 0 ] || [ "$part_size" -gt "$LOCAL_BOT_API_MAX_BYTES" ]; then
                 echo "ERROR: A split document part has invalid size."
                 echo "::add-mask::${part_size}"
-              echo "DOCUMENT_PART_SIZE_BYTES=masked"
+                echo "DOCUMENT_PART_SIZE_BYTES=masked"
                 echo "DOCUMENT_PART_LIMIT_BYTES=masked"
                 return 1
               fi
@@ -1085,7 +1085,7 @@ jobs:
                 echo "ERROR: Split document part size is invalid before send."
                 echo "DOCUMENT_PART_INDEX=masked"
                 echo "::add-mask::${part_size}"
-              echo "DOCUMENT_PART_SIZE_BYTES=masked"
+                echo "DOCUMENT_PART_SIZE_BYTES=masked"
                 return 1
               fi
 
@@ -1947,7 +1947,7 @@ jobs:
             echo "=============================="
             echo "ATTEMPT=${attempt_label}"
             echo "TRY_HEIGHT=masked"
-            echo "FORMAT_SELECTOR=${format_selector}"
+            echo "FORMAT_SELECTOR=masked"
             echo "=============================="
 
             progress_stage "downloading" "40" "Downloading" "Downloading_media"
@@ -2025,7 +2025,7 @@ jobs:
             echo ""
             echo "=============================="
             echo "ATTEMPT=${attempt_label}"
-            echo "SORT_EXPR=${sort_expr}"
+            echo "SORT_EXPR=masked"
             echo "=============================="
 
             progress_stage "downloading" "40" "Downloading" "Downloading_media"
@@ -2125,7 +2125,7 @@ jobs:
               esac
 
               echo ""
-              echo "YOUTUBE_CLIENT=${CLIENT}"
+              echo "YOUTUBE_CLIENT=masked"
 
               for HEIGHT in $HEIGHTS; do
                 FORMAT_SELECTOR="bv*[ext=mp4][vcodec^=avc1][height<=${HEIGHT}]+ba[ext=m4a]/bv*[ext=mp4][height<=${HEIGHT}]+ba[ext=m4a]/b[ext=mp4][height<=${HEIGHT}]/bv*[height<=${HEIGHT}]+ba/b[height<=${HEIGHT}]/b/best"
@@ -2231,7 +2231,7 @@ jobs:
 
               ORDER_LIST="$ORDER_LIST highest"
 
-              echo "GENERIC_SELECTED_ORDER=${ORDER_LIST}"
+              echo "GENERIC_SELECTED_ORDER=masked"
 
               FORMAT_SELECTOR="$(build_generic_selector_from_order $ORDER_LIST)"
 
