@@ -62,6 +62,9 @@ jobs:
         shell: bash
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Run smart media worker
         env:
           YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
@@ -117,6 +120,14 @@ jobs:
 
           python3 -m yt_dlp --version
           ffmpeg -version | head -n 1
-          test -f worker_smart.py
 
+          echo "PWD=$(pwd)"
+          ls -la
+
+          if [ ! -f worker_smart.py ]; then
+            echo "ERROR: worker_smart.py was not found in repository root."
+            exit 1
+          fi
+
+          python3 -S -m py_compile worker_smart.py
           python3 worker_smart.py
