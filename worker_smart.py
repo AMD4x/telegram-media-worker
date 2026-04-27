@@ -51,6 +51,7 @@ DOWNLOAD_SIZE_BYTES_FINAL = 0
 INPUT_VIDEO_CODEC_FINAL = "unknown"
 OUTPUT_VIDEO_CODEC_FINAL = "unknown"
 FINAL_SIZE_STATUS = "OK"
+MEDIA_TITLE_FINAL = ""
 
 
 def env(name: str, default: str = "") -> str:
@@ -140,6 +141,42 @@ def format_bytes(num: int) -> str:
     if idx == 0:
         return f"{int(n)} B"
     return f"{n:.2f} {units[idx]}"
+
+
+def _safe_filename_base(value: str, fallback: str = "video") -> str:
+    name = urllib.parse.unquote(str(value or "").strip())
+    name = name.replace("\\", "/")
+    name = os.path.basename(name)
+    name = re.sub(r"[\x00-\x1f\x7f]", "", name)
+    name = re.sub(r'[\\/*?:"<>|]', "", name)
+    name = re.sub(r"\s+", " ", name).strip().strip(".")
+
+    if not name:
+        name = fallback
+
+    if len(name) > 100:
+        name = name[:100].rstrip().strip(".")
+
+    return name or fallback
+
+
+def _video_upload_filename(path: Path) -> str:
+    """
+    اسم ملف sendVideo فقط.
+    لا يُستخدم مع sendDocument حتى لا يكسر مسار تسمية المستندات اليدويّة في البوت.
+    """
+    title = MEDIA_TITLE_FINAL or path.stem or f"{PLATFORM}_video"
+    base = _safe_filename_base(title, fallback=f"{PLATFORM}_video")
+
+    if base.lower() in {"video", "ytdlp-video", "direct-1", "direct-1.safe"}:
+        suffix_id = str(GITHUB_RUN_ID or int(time.time()))
+        base = _safe_filename_base(f"{PLATFORM}_video_{suffix_id}", fallback="telegram_video")
+
+    ext = path.suffix.lower()
+    if ext not in {".mp4", ".m4v", ".mov", ".webm"}:
+        ext = ".mp4"
+
+    return f"{base}{ext}"
 
 
 def run_curl(args: list[str], *, check: bool = True, quiet: bool = False) -> subprocess.CompletedProcess:
@@ -551,12 +588,16 @@ def send_file_to_telegram(path: Path, summary: dict[str, Any], attempt_label: st
     response_file = WORK_DIR / "telegram-send-response.json"
     method = "sendDocument" if as_document else "sendVideo"
     field = "document" if as_document else "video"
+        if as_document:
+        upload_arg = f"{field}=@{path}"
+    else:
+        upload_arg = f"{field}=@{path};filename={_video_upload_filename(path)}"
     args = [
         "curl", "-sS", "--connect-timeout", "20", "--max-time", "7200",
         "-o", str(response_file), "-w", "%{http_code}",
         "-X", "POST", f"{api_base}/{method}",
         "-F", f"chat_id={TELEGRAM_CHAT_ID}",
-        "-F", f"{field}=@{path}",
+        "-F", upload_arg,
     ]
     if not as_document:
         args.extend(["-F", "supports_streaming=true"])
@@ -657,7 +698,10 @@ def scan_formats() -> list[int]:
 
     with yt_dlp.YoutubeDL(ytdlp_common_opts(False)) as ydl:
         info = ydl.extract_info(SOURCE_URL, download=False)
-
+    global MEDIA_TITLE_FINAL
+    title = str(info.get("title") or info.get("fulltitle") or "Media").strip() or "Media"
+    MEDIA_TITLE_FINAL = title
+    
     formats = info.get("formats") or []
     cap = max_height_num()
 
@@ -722,7 +766,7 @@ def scan_formats() -> list[int]:
         payload = {
             "ok": False,
             "heights": [],
-            "title": info.get("title") or "Media",
+            "title": title,
             "reason": "No actually downloadable video qualities were detected",
         }
         print("SMART_FORMATS_JSON=" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=True)
@@ -732,7 +776,7 @@ def scan_formats() -> list[int]:
     payload = {
         "ok": True,
         "heights": result,
-        "title": info.get("title") or "Media",
+        "title": title,
     }
     print("SMART_FORMATS_JSON=" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=True)
     edit_progress(100, "Scan completed", "Available qualities are ready")
@@ -757,6 +801,8 @@ def format_selector_for_height(height: int | None) -> str:
 
 
 def ytdlp_download_for_height(height: int | None) -> Path | None:
+    global MEDIA_TITLE_FINAL
+
     if yt_dlp is None:
         raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
     label = "auto" if height is None else str(height)
@@ -767,7 +813,11 @@ def ytdlp_download_for_height(height: int | None) -> Path | None:
     before = set(WORK_DIR.glob("ytdlp-video.*"))
     with yt_dlp.YoutubeDL(opts) as ydl:
         try:
-            ydl.extract_info(SOURCE_URL, download=True)
+            info = ydl.extract_info(SOURCE_URL, download=True)
+            if isinstance(info, dict):
+                title = str(info.get("title") or info.get("fulltitle") or "").strip()
+                if title:
+                    MEDIA_TITLE_FINAL = title
         except Exception as exc:
             log("YTDLP_DOWNLOAD_FAILED", type(exc).__name__)
             return None
@@ -907,7 +957,7 @@ def edit_live_manual_message(heights: list[int]) -> None:
 
     text = (
         "🐙 <b>GitHub Remote — Live Manual</b>\n\n"
-        "🎚️ <b>Select a quality within 10 seconds:</b>\n"
+        f"🎚️ <b>Select a quality within {LIVE_MANUAL_TIMEOUT_SECONDS} seconds:</b>\n"
         + "\n".join(f"• <code>{h}p</code>" for h in heights)
         + "\n\n<i>If no quality is selected, this GitHub session will close automatically.</i>\n"
         f"🆔 <code>{telegram_escape(run_id)}</code>\n"
@@ -992,7 +1042,7 @@ def run_interactive_manual() -> int:
     if not selected_height:
         edit_message(
             "🐙 <b>GitHub Remote — Live Manual</b>\n\n"
-            "⌛ <i>Session expired. No quality was selected within 10 seconds.</i>\n"
+            f"⌛ <i>Session expired. No quality was selected within {LIVE_MANUAL_TIMEOUT_SECONDS} seconds.</i>\n"
             f"🆔 <code>{telegram_escape(GITHUB_RUN_ID)}</code>\n"
             f"🔗 <a href=\"{telegram_escape(GITHUB_RUN_URL)}\">Open Run</a>"
         )
