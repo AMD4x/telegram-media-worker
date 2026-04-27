@@ -1,0 +1,130 @@
+name: Smart Remote Media To Telegram
+
+on:
+  workflow_dispatch:
+    inputs:
+      media_url:
+        description: "Media URL"
+        required: true
+        type: string
+      max_height:
+        description: "Max height"
+        required: true
+        default: "auto"
+        type: choice
+        options:
+          - "auto"
+          - "2160"
+          - "1440"
+          - "1080"
+          - "720"
+          - "480"
+          - "360"
+      remote_mode:
+        description: "Remote mode"
+        required: true
+        default: "auto_best"
+        type: choice
+        options:
+          - "auto_best"
+          - "manual_quality"
+          - "scan_formats"
+      send_as:
+        description: "Send as"
+        required: true
+        default: "video"
+        type: choice
+        options:
+          - "video"
+      output_filename:
+        description: "Output document filename"
+        required: false
+        type: string
+      progress_chat_id:
+        description: "Telegram progress chat id"
+        required: false
+        type: string
+      progress_message_id:
+        description: "Telegram progress message id"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  smart_download_and_send:
+    name: Smart download and send
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    container:
+      image: ghcr.io/ad4x/tg-video-worker:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Run smart media worker
+        env:
+          YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
+          FACEBOOK_COOKIES_TXT: ${{ secrets.FACEBOOK_COOKIES_TXT }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          MEDIA_URL_INPUT: ${{ inputs.media_url }}
+          MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
+          REMOTE_MODE_INPUT: ${{ inputs.remote_mode }}
+          SEND_AS_INPUT: ${{ inputs.send_as }}
+          OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
+          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
+          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MEDIA_URL_INPUT:-}" ]; then
+            echo "ERROR: Missing media_url."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_TOKEN:-}" ]; then
+            echo "ERROR: Missing TELEGRAM_TOKEN secret."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "ERROR: Missing TELEGRAM_CHAT_ID secret."
+            exit 1
+          fi
+
+          echo "::add-mask::${MEDIA_URL_INPUT}"
+          echo "::add-mask::${TELEGRAM_TOKEN}"
+          echo "::add-mask::${TELEGRAM_CHAT_ID}"
+
+          if [ -n "${PROGRESS_CHAT_ID:-}" ]; then
+            echo "::add-mask::${PROGRESS_CHAT_ID}"
+          fi
+
+          if [ -n "${PROGRESS_MESSAGE_ID:-}" ]; then
+            echo "::add-mask::${PROGRESS_MESSAGE_ID}"
+          fi
+
+          if [ -n "${TELEGRAM_API_ID:-}" ]; then
+            echo "::add-mask::${TELEGRAM_API_ID}"
+          fi
+
+          if [ -n "${TELEGRAM_API_HASH:-}" ]; then
+            echo "::add-mask::${TELEGRAM_API_HASH}"
+          fi
+
+          python3 -m yt_dlp --version
+          ffmpeg -version | head -n 1
+          test -f /work/worker_smart.py
+
+          python3 /work/worker_smart.py
