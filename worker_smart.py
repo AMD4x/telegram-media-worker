@@ -69,6 +69,10 @@ PROGRESS_MESSAGE_ID = env("PROGRESS_MESSAGE_ID")
 TELEGRAM_API_ID = env("TELEGRAM_API_ID")
 TELEGRAM_API_HASH = env("TELEGRAM_API_HASH")
 GITHUB_RUN_URL = f"{env('GITHUB_SERVER_URL')}/{env('GITHUB_REPOSITORY')}/actions/runs/{env('GITHUB_RUN_ID')}"
+GITHUB_API_TOKEN = env("GITHUB_API_TOKEN")
+GITHUB_REPOSITORY = env("GITHUB_REPOSITORY")
+GITHUB_RUN_ID = env("GITHUB_RUN_ID")
+LIVE_MANUAL_TIMEOUT_SECONDS = 10
 
 
 def log(key: str, value: str = "1") -> None:
@@ -837,6 +841,178 @@ def run_ytdlp_fallback() -> bool:
 
     return False
 
+def live_choice_variable_name() -> str:
+    safe_run_id = re.sub(r"[^A-Za-z0-9_]", "_", str(GITHUB_RUN_ID or "").strip())
+    safe_run_id = safe_run_id[:80] or "UNKNOWN"
+    return f"SMARTBOT_REMOTE_CHOICE_{safe_run_id}"
+
+
+def github_api_get_variable(name: str) -> dict[str, Any] | None:
+    if not GITHUB_API_TOKEN or not GITHUB_REPOSITORY:
+        log("LIVE_CHOICE_API_DISABLED", "missing_github_token_or_repo")
+        return None
+
+    url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/variables/{urllib.parse.quote(name, safe='')}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "SmartGitHubRemoteWorker/1.0",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Authorization": f"Bearer {GITHUB_API_TOKEN}",
+        },
+        method="GET",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+        return json.loads(raw or "{}")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        log("LIVE_CHOICE_API_HTTP_ERROR", str(exc.code))
+        return None
+    except Exception as exc:
+        log("LIVE_CHOICE_API_ERROR", type(exc).__name__)
+        return None
+
+
+def edit_live_manual_message(heights: list[int]) -> None:
+    if not (TELEGRAM_TOKEN and PROGRESS_CHAT_ID and PROGRESS_MESSAGE_ID):
+        return
+
+    run_id = str(GITHUB_RUN_ID or "")
+    task_id = str(PROGRESS_MESSAGE_ID or "")
+
+    rows = []
+    for h in heights:
+        rows.append(
+            [
+                {
+                    "text": f"🐙 {h}p",
+                    "callback_data": f"dlghlive_{task_id}_{run_id}_{h}",
+                }
+            ]
+        )
+
+    rows.append(
+        [
+            {
+                "text": "❌ Cancel",
+                "callback_data": f"cancel_media_{task_id}",
+            }
+        ]
+    )
+
+    text = (
+        "🐙 <b>GitHub Remote — Live Manual</b>\n\n"
+        "🎚️ <b>Select a quality within 10 seconds:</b>\n"
+        + "\n".join(f"• <code>{h}p</code>" for h in heights)
+        + "\n\n<i>If no quality is selected, this GitHub session will close automatically.</i>\n"
+        f"🆔 <code>{telegram_escape(run_id)}</code>\n"
+        f"🔗 <a href=\"{telegram_escape(GITHUB_RUN_URL)}\">Open Run</a>"
+    )
+
+    run_curl(
+        [
+            "curl", "-sS", "--connect-timeout", "10", "--max-time", "20",
+            "-X", "POST", f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText",
+            "-F", f"chat_id={PROGRESS_CHAT_ID}",
+            "-F", f"message_id={PROGRESS_MESSAGE_ID}",
+            "-F", "parse_mode=HTML",
+            "-F", "disable_web_page_preview=true",
+            "-F", f"text={text}",
+            "-F", f"reply_markup={json.dumps({'inline_keyboard': rows}, ensure_ascii=False)}",
+        ],
+        check=False,
+        quiet=True,
+    )
+
+
+def wait_for_live_manual_choice(valid_heights: list[int]) -> int | None:
+    variable_name = live_choice_variable_name()
+    valid = {int(h) for h in valid_heights}
+    deadline = time.time() + LIVE_MANUAL_TIMEOUT_SECONDS
+
+    log("LIVE_CHOICE_VARIABLE", variable_name)
+    log("LIVE_CHOICE_TIMEOUT_SECONDS", str(LIVE_MANUAL_TIMEOUT_SECONDS))
+
+    while time.time() < deadline:
+        data = github_api_get_variable(variable_name)
+
+        if data and data.get("value"):
+            try:
+                payload = json.loads(str(data.get("value") or "{}"))
+            except Exception:
+                payload = {}
+
+            selected_run_id = str(payload.get("run_id") or "")
+            selected_task_id = str(payload.get("task_id") or "")
+            selected_height = int(payload.get("height") or 0)
+
+            if selected_run_id and selected_run_id != str(GITHUB_RUN_ID):
+                time.sleep(0.5)
+                continue
+
+            if selected_task_id and selected_task_id != str(PROGRESS_MESSAGE_ID):
+                time.sleep(0.5)
+                continue
+
+            if selected_height in valid:
+                log("LIVE_CHOICE_SELECTED_HEIGHT", str(selected_height))
+                return selected_height
+
+            log("LIVE_CHOICE_INVALID_HEIGHT", str(selected_height))
+
+        time.sleep(0.5)
+
+    log("LIVE_CHOICE_EXPIRED", "1")
+    return None
+
+
+def run_interactive_manual() -> int:
+    global MAX_HEIGHT_RAW, REMOTE_MODE
+
+    heights = scan_formats()
+
+    if not heights:
+        edit_message(
+            "🐙 <b>GitHub Remote — Live Manual</b>\n\n"
+            "⚠️ <i>No downloadable qualities were detected.</i>\n"
+            f"🆔 <code>{telegram_escape(GITHUB_RUN_ID)}</code>\n"
+            f"🔗 <a href=\"{telegram_escape(GITHUB_RUN_URL)}\">Open Run</a>"
+        )
+        log("FINAL_RESULT", "interactive_manual_no_qualities")
+        return 0
+
+    edit_live_manual_message(heights)
+    selected_height = wait_for_live_manual_choice(heights)
+
+    if not selected_height:
+        edit_message(
+            "🐙 <b>GitHub Remote — Live Manual</b>\n\n"
+            "⌛ <i>Session expired. No quality was selected within 10 seconds.</i>\n"
+            f"🆔 <code>{telegram_escape(GITHUB_RUN_ID)}</code>\n"
+            f"🔗 <a href=\"{telegram_escape(GITHUB_RUN_URL)}\">Open Run</a>"
+        )
+        log("FINAL_RESULT", "interactive_manual_expired")
+        return 0
+
+    MAX_HEIGHT_RAW = str(selected_height)
+    REMOTE_MODE = "manual_quality"
+
+    edit_progress(35, "Selected", f"Manual quality selected: {selected_height}p")
+
+    if run_direct_path():
+        return 0
+
+    if run_ytdlp_fallback():
+        return 0
+
+    edit_progress(100, "Failed", "Selected manual quality failed")
+    log("FINAL_RESULT", "interactive_manual_failed")
+    return 1
 
 def cleanup() -> None:
     global LOCAL_BOT_API_PROC
@@ -871,6 +1047,9 @@ def main() -> int:
         if REMOTE_MODE == "scan_formats":
             scan_formats()
             return 0
+
+        if REMOTE_MODE == "interactive_manual":
+            return run_interactive_manual()
 
         if run_direct_path():
             return 0
