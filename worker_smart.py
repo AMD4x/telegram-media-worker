@@ -741,10 +741,14 @@ def format_selector_for_height(height: int | None) -> str:
             "bv*[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/"
             "b[ext=mp4]/bv*+ba/best"
         )
+
+    # Manual quality يجب أن يحاول الجودة المطلوبة نفسها فقط داخل هذه المحاولة.
+    # الهبوط للأقل يتم خارجيًّا في run_ytdlp_fallback عبر candidate_heights().
     return (
-        f"bv*[ext=mp4][vcodec^=avc1][height<={height}]+ba[ext=m4a]/"
-        f"b[ext=mp4][height<={height}]/"
-        f"bv*[height<={height}]+ba/best[height<={height}]/best"
+        f"bv*[ext=mp4][vcodec^=avc1][height={height}]+ba[ext=m4a]/"
+        f"b[ext=mp4][height={height}]/"
+        f"bv*[height={height}]+ba/"
+        f"best[height={height}]"
     )
 
 
