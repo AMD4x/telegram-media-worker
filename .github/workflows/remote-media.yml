@@ -1,4 +1,5 @@
 name: Remote Media To Telegram
+run-name: "AMD4x Remote ${{ inputs.progress_message_id }} · ${{ inputs.send_as }} · ${{ inputs.max_height }}"
 
 on:
   workflow_dispatch:
