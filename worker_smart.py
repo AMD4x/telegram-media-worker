@@ -635,29 +635,88 @@ def ytdlp_common_opts(download: bool) -> dict[str, Any]:
 def scan_formats() -> list[int]:
     if yt_dlp is None:
         raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
-    edit_progress(25, "Scanning", "Scanning available GitHub Remote qualities")
+
+    edit_progress(25, "Scanning", "Scanning actually downloadable GitHub Remote qualities")
+
     with yt_dlp.YoutubeDL(ytdlp_common_opts(False)) as ydl:
         info = ydl.extract_info(SOURCE_URL, download=False)
+
     formats = info.get("formats") or []
-    heights: set[int] = set()
+    cap = max_height_num()
+
+    video_heights_with_audio: set[int] = set()
+    video_only_heights: set[int] = set()
+    audio_available = False
+
     for fmt in formats:
-        h = fmt.get("height")
-        vcodec = str(fmt.get("vcodec") or "none")
-        if not h or vcodec == "none":
+        height = fmt.get("height")
+        vcodec = str(fmt.get("vcodec") or "none").lower()
+        acodec = str(fmt.get("acodec") or "none").lower()
+        ext = str(fmt.get("ext") or "").lower()
+        url = str(fmt.get("url") or "").strip()
+        protocol = str(fmt.get("protocol") or "").lower()
+
+        if not url:
             continue
+
+        # صيغة صوت قابلة للمرافقة مع video-only
+        if vcodec == "none" and acodec != "none":
+            if ext in {"m4a", "mp4", "webm"} or "m3u8" in protocol or "http" in protocol:
+                audio_available = True
+            continue
+
+        if vcodec == "none" or not height:
+            continue
+
         try:
-            h = int(h)
+            height = int(height)
         except Exception:
             continue
-        if h >= 144:
-            cap = max_height_num()
-            if cap is None or h <= cap:
-                heights.add(h)
-    if not heights:
-        for h in candidate_heights():
-            heights.add(h)
+
+        if height < 144:
+            continue
+
+        if cap is not None and height > cap:
+            continue
+
+        # لا نعرض إلّا صيغًا قابلة فعليًّا للتنزيل عبر المسار الحالي.
+        is_http_like = "http" in protocol or "m3u8" in protocol or url.startswith(("http://", "https://"))
+        if not is_http_like:
+            continue
+
+        has_audio = acodec != "none"
+
+        # صيغة muxed جاهزة: فيديو + صوت في نفس الفورمات.
+        if has_audio:
+            video_heights_with_audio.add(height)
+            continue
+
+        # صيغة video-only: لا نعرضها إلّا إذا كان هناك صوت منفصل متاح للدمج.
+        video_only_heights.add(height)
+
+    heights: set[int] = set(video_heights_with_audio)
+
+    if audio_available:
+        heights.update(video_only_heights)
+
     result = sorted(heights, reverse=True)
-    payload = {"ok": True, "heights": result, "title": info.get("title") or "Media"}
+
+    if not result:
+        payload = {
+            "ok": False,
+            "heights": [],
+            "title": info.get("title") or "Media",
+            "reason": "No actually downloadable video qualities were detected",
+        }
+        print("SMART_FORMATS_JSON=" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=True)
+        edit_progress(100, "Scan completed", "No actually downloadable qualities were detected")
+        return []
+
+    payload = {
+        "ok": True,
+        "heights": result,
+        "title": info.get("title") or "Media",
+    }
     print("SMART_FORMATS_JSON=" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=True)
     edit_progress(100, "Scan completed", "Available qualities are ready")
     return result
