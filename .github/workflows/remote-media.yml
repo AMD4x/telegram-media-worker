@@ -2207,6 +2207,13 @@ jobs:
               exit 0
             fi
 
+            if [ "$PLATFORM" = "generic" ]; then
+              progress_stage "failed" "100" "Failed" "Direct_document_download_failed"
+              echo "FINAL_RESULT=failed"
+              echo "Direct document download failed. Generic document links will not be passed to yt-dlp."
+              exit 1
+            fi
+
             echo "DIRECT_DOCUMENT_FALLBACK_TO_YTDLP=1"
           fi
 
