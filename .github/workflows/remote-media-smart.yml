@@ -117,6 +117,6 @@ jobs:
 
           python3 -m yt_dlp --version
           ffmpeg -version | head -n 1
-          test -f /work/worker_smart.py
+          test -f worker_smart.py
 
-          python3 /work/worker_smart.py
+          python3 worker_smart.py
