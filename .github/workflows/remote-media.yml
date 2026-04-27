@@ -92,7 +92,7 @@ jobs:
 
           DIRECT_TELEGRAM_MAX_BYTES="50000000"
           LOCAL_BOT_API_MAX_BYTES="2000000000"
-          DOCUMENT_SPLIT_PART_BYTES="10000000"
+          DOCUMENT_SPLIT_PART_BYTES="1850000000"
           TELEGRAM_TARGET_MAX_BYTES="1950000000"
           MAX_FILE_BYTES="$DIRECT_TELEGRAM_MAX_BYTES"
 
@@ -895,7 +895,7 @@ jobs:
             DOCUMENT_SEND_MANIFEST="$manifest"
             DOCUMENT_SPLIT_TOTAL_BYTES="$zip_size"
 
-            if [ "$zip_size" -le "$DOCUMENT_SPLIT_PART_BYTES" ]; then
+            if [ "$zip_size" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
               printf '%s\n' "$zip_path" > "$manifest"
               echo "DOCUMENT_SPLIT_REQUIRED=0"
               echo "DOCUMENT_SEND_FILES=single"
@@ -1034,6 +1034,7 @@ jobs:
             local part_size
             local api_base
             local send_mode
+            local last_send_mode
             local response_file
             local http_code
             local percent
@@ -1052,6 +1053,7 @@ jobs:
             telegram_send_split_notice "$total_parts" "${DOCUMENT_SPLIT_TOTAL_BYTES:-0}"
 
             current_part=0
+            last_send_mode="unknown"
 
             while IFS= read -r part_path; do
               current_part=$((current_part + 1))
@@ -1078,6 +1080,8 @@ jobs:
                 api_base="http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}"
                 send_mode="local"
               fi
+
+              last_send_mode="$send_mode"
 
               percent=$((90 + (current_part * 8 / total_parts)))
               if [ "$percent" -gt 98 ]; then
@@ -1115,7 +1119,13 @@ jobs:
 
             progress_stage "sent" "98" "Finalizing" "Telegram_document_parts_send_completed"
 
-            telegram_edit_document_summary               "✅ <b>GitHub Document completed</b>"               "📦 <i>Sent as ${total_parts} split ZIP parts.</i>"               "${DOCUMENT_SPLIT_TOTAL_BYTES:-0}"               "local"               "Document parts"               "$(basename "${DOCUMENT_ZIP_FILE:-document.zip}")"
+            telegram_edit_document_summary \
+              "✅ <b>GitHub Document completed</b>" \
+              "📦 <i>Sent as ${total_parts} split ZIP parts.</i>" \
+              "${DOCUMENT_SPLIT_TOTAL_BYTES:-0}" \
+              "${last_send_mode:-unknown}" \
+              "Document parts" \
+              "$(basename "${DOCUMENT_ZIP_FILE:-document.zip}")"
 
             return 0
           }
