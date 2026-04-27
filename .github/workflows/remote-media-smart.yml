@@ -82,7 +82,7 @@ jobs:
           OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
           PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
           PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
-          GITHUB_API_TOKEN: ${{ secrets.GITHUB_ACTIONS_TOKEN }}
+          SMARTBOT_GITHUB_TOKEN: ${{ secrets.SMARTBOT_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -101,7 +101,7 @@ jobs:
             exit 1
           fi
 
-          if [ -z "${GITHUB_API_TOKEN:-}" ]; then
+          if [ -z "${SMARTBOT_GITHUB_TOKEN:-}" ]; then
             echo "ERROR: Missing GITHUB_ACTIONS_TOKEN secret for live Manual choice."
             exit 1
           fi
