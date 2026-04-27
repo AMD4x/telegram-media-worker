@@ -159,11 +159,23 @@ def max_height_num() -> int | None:
 
 
 def candidate_heights() -> list[int]:
-    heights = [2160, 1440, 1080, 720, 480, 360]
+    standard_heights = [4320, 2160, 1440, 1080, 720, 480, 360, 240, 144]
     cap = max_height_num()
+
     if cap is None:
-        return heights
-    return [h for h in heights if h <= cap]
+        return standard_heights
+
+    heights = []
+
+    # مهم: الجودة المختارة من Manual قد تكون غير قياسيّة مثل 1920 أو 1280 أو 1024.
+    if cap >= 144:
+        heights.append(cap)
+
+    for h in standard_heights:
+        if h <= cap and h not in heights:
+            heights.append(h)
+
+    return heights
 
 
 def origin_from_url(url: str) -> str:
