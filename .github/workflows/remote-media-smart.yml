@@ -8,18 +8,10 @@ on:
         required: true
         type: string
       max_height:
-        description: "Max height"
+        description: "Max height: auto or numeric height"
         required: true
         default: "auto"
-        type: choice
-        options:
-          - "auto"
-          - "2160"
-          - "1440"
-          - "1080"
-          - "720"
-          - "480"
-          - "360"
+        type: string
       remote_mode:
         description: "Remote mode"
         required: true
