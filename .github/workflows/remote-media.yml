@@ -874,7 +874,7 @@ jobs:
               --max-redirs 10 \
               --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
               --referer "$REFERER_URL" \
-              --add-header "Accept-Language:en-US,en;q=0.9" \
+              -H "Accept-Language: en-US,en;q=0.9" \
               "$SOURCE_URL" > "$header_file" 2>/dev/null; then
 
               header_file_name="$(document_file_name_from_headers "$header_file")"
@@ -901,8 +901,8 @@ jobs:
               --retry-delay 2 \
               --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
               --referer "$REFERER_URL" \
-              --add-header "Accept-Language:en-US,en;q=0.9" \
-              --add-header "Accept: application/octet-stream,*/*" \
+              -H "Accept-Language: en-US,en;q=0.9" \
+              -H "Accept: application/octet-stream,*/*" \
               -D "$header_file" \
               -o "$output_file" \
               "$SOURCE_URL"; then
