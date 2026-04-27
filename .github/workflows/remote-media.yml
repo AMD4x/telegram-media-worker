@@ -407,6 +407,17 @@ jobs:
             exit 1
           fi
 
+          echo "::add-mask::${TELEGRAM_TOKEN}"
+          echo "::add-mask::${TELEGRAM_CHAT_ID}"
+
+          if [ -n "${PROGRESS_CHAT_ID:-}" ]; then
+            echo "::add-mask::${PROGRESS_CHAT_ID}"
+          fi
+
+          if [ -n "${PROGRESS_MESSAGE_ID:-}" ]; then
+            echo "::add-mask::${PROGRESS_MESSAGE_ID}"
+          fi
+
           if [ -n "${TELEGRAM_API_ID:-}" ]; then
             echo "::add-mask::${TELEGRAM_API_ID}"
           fi
@@ -550,7 +561,8 @@ jobs:
               -e 's#(\[generic\] )[A-Za-z0-9_-]{6,}(: Downloading webpage)#\1<masked-id>\2#g' \
               -e 's#(\[[A-Za-z0-9:_-]+\] )[0-9]{6,}(:)#\1<masked-id>\2#g' \
               -e 's#([?&]v=)[A-Za-z0-9_-]+#\1<masked-id>#g' \
-              -e 's#(/reel/)[0-9]+#\1<masked-id>#g' \
+              -e 's#(/reel/)[0-9]+#<masked-id>#g' \
+              -e 's#[0-9]+([.][0-9]+)?[[:space:]]*(KiB|MiB|GiB|TiB|KB|MB|GB|TB|B)(/s)?#<masked-size>#g' \
               -e 's#[0-9]{10,}#<masked-id>#g' \
               "$log_file"
           }
@@ -734,7 +746,8 @@ jobs:
             echo "DOCUMENT_ZIP_CREATED=1"
             echo "DOCUMENT_ZIP_FILE=masked"
             echo "DOCUMENT_ZIP_INNER_NAME=masked"
-            echo "DOCUMENT_ZIP_SIZE_BYTES=${zip_size}"
+            echo "::add-mask::${zip_size}"
+            echo "DOCUMENT_ZIP_SIZE_BYTES=masked"
 
             DOCUMENT_ZIP_FILE="$zip_path"
             DOCUMENT_ZIP_INNER_NAME="$inner_name"
@@ -800,7 +813,7 @@ jobs:
 
             progress_stage "downloading" "40" "Downloading" "Downloading_document"
 
-            if ! curl -fL \
+            if ! curl -fsSL \
               --connect-timeout 20 \
               --max-time 21600 \
               --max-redirs 10 \
@@ -828,7 +841,8 @@ jobs:
 
             echo "DIRECT_DOCUMENT_DOWNLOAD=success"
             echo "DIRECT_DOCUMENT_FILE=masked"
-            echo "DIRECT_DOCUMENT_SIZE_BYTES=${size_bytes}"
+            echo "::add-mask::${size_bytes}"
+            echo "DIRECT_DOCUMENT_SIZE_BYTES=masked"
 
             handle_downloaded_file "$output_file" "document" "direct-document"
             return $?
@@ -850,8 +864,9 @@ jobs:
               return 1
             fi
 
-            echo "TELEGRAM_DOCUMENT_SIZE_CHECK_BYTES=${size_bytes}"
-            echo "TELEGRAM_DOCUMENT_LIMIT_BYTES=${LOCAL_BOT_API_MAX_BYTES}"
+            echo "::add-mask::${size_bytes}"
+            echo "TELEGRAM_DOCUMENT_SIZE_CHECK_BYTES=masked"
+            echo "TELEGRAM_DOCUMENT_LIMIT_BYTES=masked"
 
             progress_stage "size_check" "72" "Checking" "Checking_document_size"
 
@@ -895,7 +910,7 @@ jobs:
             DOCUMENT_SEND_MANIFEST="$manifest"
             DOCUMENT_SPLIT_TOTAL_BYTES="$zip_size"
 
-            if [ "$zip_size" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
+            if [ "$zip_size" -le "$DOCUMENT_SPLIT_PART_BYTES" ]; then
               printf '%s\n' "$zip_path" > "$manifest"
               echo "DOCUMENT_SPLIT_REQUIRED=0"
               echo "DOCUMENT_SEND_FILES=single"
@@ -970,8 +985,9 @@ jobs:
               part_size="$(stat -c%s "$part_path" 2>/dev/null || echo 0)"
               if [ "$part_size" -le 0 ] || [ "$part_size" -gt "$LOCAL_BOT_API_MAX_BYTES" ]; then
                 echo "ERROR: A split document part has invalid size."
-                echo "DOCUMENT_PART_SIZE_BYTES=${part_size}"
-                echo "DOCUMENT_PART_LIMIT_BYTES=${LOCAL_BOT_API_MAX_BYTES}"
+                echo "::add-mask::${part_size}"
+                echo "DOCUMENT_PART_SIZE_BYTES=masked"
+                echo "DOCUMENT_PART_LIMIT_BYTES=masked"
                 return 1
               fi
 
@@ -988,7 +1004,7 @@ jobs:
 
             echo "DOCUMENT_SPLIT_REQUIRED=1"
             echo "DOCUMENT_SPLIT_PARTS_COUNT=${parts_count}"
-            echo "DOCUMENT_SPLIT_PART_BYTES=${DOCUMENT_SPLIT_PART_BYTES}"
+            echo "DOCUMENT_SPLIT_PART_BYTES=masked"
             echo "DOCUMENT_SEND_MANIFEST=masked"
 
             return 0
@@ -1048,7 +1064,7 @@ jobs:
 
             echo "SENDING_SPLIT_DOCUMENT_TO_TELEGRAM=1"
             echo "DOCUMENT_SPLIT_PARTS_COUNT=${total_parts}"
-            echo "DOCUMENT_SPLIT_TOTAL_BYTES=${DOCUMENT_SPLIT_TOTAL_BYTES:-0}"
+            echo "DOCUMENT_SPLIT_TOTAL_BYTES=masked"
 
             telegram_send_split_notice "$total_parts" "${DOCUMENT_SPLIT_TOTAL_BYTES:-0}"
 
@@ -1068,7 +1084,8 @@ jobs:
               if [ "$part_size" -le 0 ] || [ "$part_size" -gt "$LOCAL_BOT_API_MAX_BYTES" ]; then
                 echo "ERROR: Split document part size is invalid before send."
                 echo "DOCUMENT_PART_INDEX=${current_part}"
-                echo "DOCUMENT_PART_SIZE_BYTES=${part_size}"
+                echo "::add-mask::${part_size}"
+                echo "DOCUMENT_PART_SIZE_BYTES=masked"
                 return 1
               fi
 
@@ -1091,7 +1108,8 @@ jobs:
               echo "SENDING_DOCUMENT_PART=1"
               echo "DOCUMENT_PART_INDEX=${current_part}"
               echo "DOCUMENT_PARTS_TOTAL=${total_parts}"
-              echo "DOCUMENT_PART_SIZE_BYTES=${part_size}"
+              echo "::add-mask::${part_size}"
+                echo "DOCUMENT_PART_SIZE_BYTES=masked"
               echo "DOCUMENT_PART_SEND_MODE=${send_mode}"
               echo "DOCUMENT_PART_FILE=masked"
 
@@ -1223,7 +1241,8 @@ jobs:
             echo "OUTPUT_VIDEO_CODEC=${output_vcodec:-unknown}"
             echo "OUTPUT_AUDIO_CODEC=${output_acodec:-none}"
             echo "OUTPUT_PIXEL_FORMAT=${output_pix_fmt:-unknown}"
-            echo "OUTPUT_SIZE_BYTES=${output_size}"
+            echo "::add-mask::${output_size}"
+            echo "OUTPUT_SIZE_BYTES=masked"
 
             OUTPUT_VIDEO_CODEC_FINAL="${output_vcodec:-unknown}"
             OUTPUT_AUDIO_CODEC_FINAL="${output_acodec:-none}"
@@ -1308,9 +1327,10 @@ jobs:
             fi
 
             echo "SIZE_FIT_REQUIRED=1"
-            echo "SIZE_FIT_ORIGINAL_BYTES=${original_size}"
-            echo "SIZE_FIT_LIMIT_BYTES=${LOCAL_BOT_API_MAX_BYTES}"
-            echo "SIZE_FIT_TARGET_BYTES=${TELEGRAM_TARGET_MAX_BYTES}"
+            echo "::add-mask::${original_size}"
+            echo "SIZE_FIT_ORIGINAL_BYTES=masked"
+            echo "SIZE_FIT_LIMIT_BYTES=masked"
+            echo "SIZE_FIT_TARGET_BYTES=masked"
 
             progress_stage "size_fit" "78" "Reducing" "Reducing_size_to_fit"
 
@@ -1390,13 +1410,14 @@ jobs:
 
               output_size="$(stat -c%s "$tmp_output" 2>/dev/null || echo 0)"
 
-              echo "SIZE_FIT_OUTPUT_BYTES=${output_size}"
+              echo "::add-mask::${output_size}"
+              echo "SIZE_FIT_OUTPUT_BYTES=masked"
               echo "SIZE_FIT_OUTPUT_HEIGHT=${target_height}"
 
               if [ "$output_size" -gt 0 ] && [ "$output_size" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
                 mv "$tmp_output" "$file_path"
                 echo "SIZE_FIT_SUCCESS=1"
-                echo "SIZE_FIT_FINAL_BYTES=${output_size}"
+                echo "SIZE_FIT_FINAL_BYTES=masked"
                 echo "SIZE_FIT_FINAL_HEIGHT=${target_height}"
                 echo "SIZE_FIT_AUDIO_MODE=copy"
 
@@ -1434,8 +1455,9 @@ jobs:
               return 1
             fi
 
-            echo "TELEGRAM_SIZE_CHECK_BYTES=${size_bytes}"
-            echo "TELEGRAM_SIZE_LIMIT_BYTES=${LOCAL_BOT_API_MAX_BYTES}"
+            echo "::add-mask::${size_bytes}"
+            echo "TELEGRAM_SIZE_CHECK_BYTES=masked"
+            echo "TELEGRAM_SIZE_LIMIT_BYTES=masked"
 
             progress_stage "size_check" "72" "Checking" "Checking_final_size"
 
@@ -1573,7 +1595,7 @@ jobs:
             fi
 
             if [ "$size_bytes" -gt "$LOCAL_BOT_API_MAX_BYTES" ]; then
-              echo "SKIP: File is larger than Local Bot API limit. SIZE_BYTES=${size_bytes}"
+              echo "SKIP: File is larger than Local Bot API limit. SIZE_BYTES=masked"
               return 2
             fi
 
@@ -1596,12 +1618,12 @@ jobs:
             echo "SELECTED_FILE=masked"
             echo "SELECTED_HEIGHT=${success_height}"
             echo "SELECTED_ATTEMPT=${attempt_label}"
-            echo "SELECTED_SIZE_BYTES=${size_bytes}"
+            echo "SELECTED_SIZE_BYTES=masked"
 
             if [ "${SEND_AS:-video}" = "document" ]; then
               echo "REMOTE_DOCUMENT_READY=1"
               echo "READY_TO_SEND=1"
-              echo "READY_SIZE_BYTES=${size_bytes}"
+              echo "READY_SIZE_BYTES=masked"
               echo "READY_ATTEMPT=${attempt_label}"
               echo "READY_SEND_MODE=${send_mode}"
               echo "READY_SEND_METHOD=document"
@@ -1657,7 +1679,7 @@ jobs:
 
             echo "REMOTE_MEDIA_READY=1"
             echo "READY_TO_SEND=1"
-            echo "READY_SIZE_BYTES=${size_bytes}"
+            echo "READY_SIZE_BYTES=masked"
             echo "READY_HEIGHT=${success_height}"
             echo "READY_ATTEMPT=${attempt_label}"
             echo "READY_SEND_MODE=${send_mode}"
@@ -1780,7 +1802,8 @@ jobs:
             echo "DOWNLOAD_SUCCESS=1"
             echo "DOWNLOAD_SUCCESS_HEIGHT=${success_height}"
             echo "DOWNLOAD_SUCCESS_ATTEMPT=${attempt_label}"
-            echo "DOWNLOAD_SIZE_BYTES=${size_bytes}"
+            echo "::add-mask::${size_bytes}"
+            echo "DOWNLOAD_SIZE_BYTES=masked"
 
             DOWNLOAD_SIZE_BYTES_FINAL="${size_bytes}"
 
