@@ -47,9 +47,12 @@ RUN curl -fsSL https://deno.land/install.sh | sh
 RUN python3 -m pip install --upgrade pip \
     && python3 -m pip install --upgrade --pre "yt-dlp[default]"
 
+COPY worker_smart.py /work/worker_smart.py
+
 RUN python3 -m yt_dlp --version \
     && deno --version \
     && ffmpeg -version | head -n 1 \
-    && test -x /usr/local/bin/telegram-bot-api
+    && test -x /usr/local/bin/telegram-bot-api \
+    && python3 -S -m py_compile /work/worker_smart.py
 
 WORKDIR /work
