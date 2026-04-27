@@ -21,6 +21,7 @@ on:
           - "auto_best"
           - "manual_quality"
           - "scan_formats"
+          - "interactive_manual"
       send_as:
         description: "Send as"
         required: true
@@ -44,6 +45,7 @@ on:
 permissions:
   contents: read
   packages: read
+  actions: read
 
 jobs:
   smart_download_and_send:
@@ -80,6 +82,7 @@ jobs:
           OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
           PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
           PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
+          GITHUB_API_TOKEN: ${{ secrets.GITHUB_ACTIONS_TOKEN || github.token }}
         run: |
           set -euo pipefail
 
