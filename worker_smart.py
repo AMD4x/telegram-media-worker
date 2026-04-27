@@ -588,7 +588,8 @@ def send_file_to_telegram(path: Path, summary: dict[str, Any], attempt_label: st
     response_file = WORK_DIR / "telegram-send-response.json"
     method = "sendDocument" if as_document else "sendVideo"
     field = "document" if as_document else "video"
-        if as_document:
+
+    if as_document:
         upload_arg = f"{field}=@{path}"
     else:
         upload_arg = f"{field}=@{path};filename={_video_upload_filename(path)}"
