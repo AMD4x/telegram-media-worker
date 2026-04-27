@@ -786,10 +786,8 @@ def scan_formats() -> list[int]:
 
 def format_selector_for_height(height: int | None) -> str:
     if height is None:
-        return (
-            "bv*[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/"
-            "b[ext=mp4]/bv*+ba/best"
-        )
+        # Auto Best يجب أن يختار أعلى جودة فعلية، حتى لو احتاجت تحويلًا لاحقًا.
+        return "bv*+ba/bestvideo+bestaudio/best"
 
     # Manual quality يجب أن يحاول الجودة المطلوبة نفسها فقط داخل هذه المحاولة.
     # الهبوط للأقل يتم خارجيًّا في run_ytdlp_fallback عبر candidate_heights().
@@ -810,7 +808,10 @@ def ytdlp_download_for_height(height: int | None) -> Path | None:
     edit_progress(42, "Downloading", f"yt-dlp fallback is trying {label}")
     opts = ytdlp_common_opts(True)
     opts["format"] = format_selector_for_height(height)
-    opts["format_sort"] = ["vcodec:avc1", "acodec:m4a", "ext:mp4", "res", "fps", "br"]
+    if height is None:
+        opts["format_sort"] = ["res", "fps", "br", "size"]
+    else:
+        opts["format_sort"] = ["vcodec:avc1", "acodec:m4a", "ext:mp4", "res", "fps", "br"]
     before = set(WORK_DIR.glob("ytdlp-video.*"))
     with yt_dlp.YoutubeDL(opts) as ydl:
         try:
