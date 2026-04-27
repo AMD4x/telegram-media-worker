@@ -895,7 +895,7 @@ jobs:
             DOCUMENT_SEND_MANIFEST="$manifest"
             DOCUMENT_SPLIT_TOTAL_BYTES="$zip_size"
 
-            if [ "$zip_size" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
+            if [ "$zip_size" -le "$DOCUMENT_SPLIT_PART_BYTES" ]; then
               printf '%s\n' "$zip_path" > "$manifest"
               echo "DOCUMENT_SPLIT_REQUIRED=0"
               echo "DOCUMENT_SEND_FILES=single"
