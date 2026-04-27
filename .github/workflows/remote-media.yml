@@ -986,7 +986,7 @@ jobs:
               if [ "$part_size" -le 0 ] || [ "$part_size" -gt "$LOCAL_BOT_API_MAX_BYTES" ]; then
                 echo "ERROR: A split document part has invalid size."
                 echo "::add-mask::${part_size}"
-                echo "DOCUMENT_PART_SIZE_BYTES=masked"
+              echo "DOCUMENT_PART_SIZE_BYTES=masked"
                 echo "DOCUMENT_PART_LIMIT_BYTES=masked"
                 return 1
               fi
@@ -1003,7 +1003,7 @@ jobs:
             rm -f "$zip_path"
 
             echo "DOCUMENT_SPLIT_REQUIRED=1"
-            echo "DOCUMENT_SPLIT_PARTS_COUNT=${parts_count}"
+            echo "DOCUMENT_SPLIT_PARTS_COUNT=masked"
             echo "DOCUMENT_SPLIT_PART_BYTES=masked"
             echo "DOCUMENT_SEND_MANIFEST=masked"
 
@@ -1063,7 +1063,7 @@ jobs:
             fi
 
             echo "SENDING_SPLIT_DOCUMENT_TO_TELEGRAM=1"
-            echo "DOCUMENT_SPLIT_PARTS_COUNT=${total_parts}"
+            echo "DOCUMENT_SPLIT_PARTS_COUNT=masked"
             echo "DOCUMENT_SPLIT_TOTAL_BYTES=masked"
 
             telegram_send_split_notice "$total_parts" "${DOCUMENT_SPLIT_TOTAL_BYTES:-0}"
@@ -1083,9 +1083,9 @@ jobs:
 
               if [ "$part_size" -le 0 ] || [ "$part_size" -gt "$LOCAL_BOT_API_MAX_BYTES" ]; then
                 echo "ERROR: Split document part size is invalid before send."
-                echo "DOCUMENT_PART_INDEX=${current_part}"
+                echo "DOCUMENT_PART_INDEX=masked"
                 echo "::add-mask::${part_size}"
-                echo "DOCUMENT_PART_SIZE_BYTES=masked"
+              echo "DOCUMENT_PART_SIZE_BYTES=masked"
                 return 1
               fi
 
@@ -1106,14 +1106,14 @@ jobs:
               fi
 
               echo "SENDING_DOCUMENT_PART=1"
-              echo "DOCUMENT_PART_INDEX=${current_part}"
-              echo "DOCUMENT_PARTS_TOTAL=${total_parts}"
+              echo "DOCUMENT_PART_INDEX=masked"
+              echo "DOCUMENT_PARTS_TOTAL=masked"
               echo "::add-mask::${part_size}"
-                echo "DOCUMENT_PART_SIZE_BYTES=masked"
+              echo "DOCUMENT_PART_SIZE_BYTES=masked"
               echo "DOCUMENT_PART_SEND_MODE=${send_mode}"
               echo "DOCUMENT_PART_FILE=masked"
 
-              progress_stage "sending_part" "$percent" "Sending" "Sending_document_part_${current_part}_of_${total_parts}"
+              progress_stage "sending_part" "$percent" "Sending" "Sending_document_part"
 
               telegram_edit_document_summary                 "✅ <b>GitHub Document part ${current_part}/${total_parts}</b>"                 "⏳ <i>Sending split ZIP part to Telegram...</i>"                 "$part_size"                 "$send_mode"                 "Document part"                 "$(basename "$part_path")"
 
@@ -1178,9 +1178,9 @@ jobs:
             input_pix_fmt="$(ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$input_file" 2>/dev/null | head -n 1 || true)"
 
             echo "NORMALIZE_MEDIA=1"
-            echo "INPUT_VIDEO_CODEC=${input_vcodec:-unknown}"
-            echo "INPUT_AUDIO_CODEC=${input_acodec:-none}"
-            echo "INPUT_PIXEL_FORMAT=${input_pix_fmt:-unknown}"
+            echo "INPUT_VIDEO_CODEC=masked"
+            echo "INPUT_AUDIO_CODEC=masked"
+            echo "INPUT_PIXEL_FORMAT=masked"
 
             INPUT_VIDEO_CODEC_FINAL="${input_vcodec:-unknown}"
             INPUT_AUDIO_CODEC_FINAL="${input_acodec:-none}"
@@ -1238,9 +1238,9 @@ jobs:
             output_pix_fmt="$(ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$output_file" 2>/dev/null | head -n 1 || true)"
 
             echo "NORMALIZE_SUCCESS=1"
-            echo "OUTPUT_VIDEO_CODEC=${output_vcodec:-unknown}"
-            echo "OUTPUT_AUDIO_CODEC=${output_acodec:-none}"
-            echo "OUTPUT_PIXEL_FORMAT=${output_pix_fmt:-unknown}"
+            echo "OUTPUT_VIDEO_CODEC=masked"
+            echo "OUTPUT_AUDIO_CODEC=masked"
+            echo "OUTPUT_PIXEL_FORMAT=masked"
             echo "::add-mask::${output_size}"
             echo "OUTPUT_SIZE_BYTES=masked"
 
@@ -1344,10 +1344,10 @@ jobs:
             video_height="$(get_video_height "$file_path")"
             target_video_kbps="$(calc_target_video_bitrate_kbps "$duration_seconds" "$TELEGRAM_TARGET_MAX_BYTES" "$audio_bitrate_bps")"
 
-            echo "SIZE_FIT_DURATION_SECONDS=${duration_seconds:-unknown}"
-            echo "SIZE_FIT_AUDIO_BITRATE_BPS=${audio_bitrate_bps}"
-            echo "SIZE_FIT_SOURCE_HEIGHT=${video_height}"
-            echo "SIZE_FIT_TARGET_VIDEO_KBPS=${target_video_kbps}"
+            echo "SIZE_FIT_DURATION_SECONDS=masked"
+            echo "SIZE_FIT_AUDIO_BITRATE_BPS=masked"
+            echo "SIZE_FIT_SOURCE_HEIGHT=masked"
+            echo "SIZE_FIT_TARGET_VIDEO_KBPS=masked"
 
             if ! echo "$target_video_kbps" | grep -Eq '^[0-9]+$'; then
               echo "ERROR: Could not calculate target video bitrate."
@@ -1375,7 +1375,7 @@ jobs:
               tmp_output="${file_path}.fit-${target_height}.tmp.mp4"
               rm -f "$tmp_output"
 
-              echo "SIZE_FIT_ATTEMPT_HEIGHT=${target_height}"
+              echo "SIZE_FIT_ATTEMPT_HEIGHT=masked"
 
               scale_filter="scale=-2:${target_height}:force_original_aspect_ratio=decrease,format=yuv420p"
 
@@ -1396,7 +1396,7 @@ jobs:
 
               if [ "$rc" -ne 0 ]; then
                 echo "SIZE_FIT_FFMPEG_FAILED=1"
-                echo "SIZE_FIT_HEIGHT=${target_height}"
+                echo "SIZE_FIT_HEIGHT=masked"
                 echo "SIZE_FIT_RC=${rc}"
                 rm -f "$tmp_output"
                 continue
@@ -1404,7 +1404,7 @@ jobs:
 
               if [ ! -f "$tmp_output" ]; then
                 echo "SIZE_FIT_OUTPUT_MISSING=1"
-                echo "SIZE_FIT_HEIGHT=${target_height}"
+                echo "SIZE_FIT_HEIGHT=masked"
                 continue
               fi
 
@@ -1412,14 +1412,14 @@ jobs:
 
               echo "::add-mask::${output_size}"
               echo "SIZE_FIT_OUTPUT_BYTES=masked"
-              echo "SIZE_FIT_OUTPUT_HEIGHT=${target_height}"
+              echo "SIZE_FIT_OUTPUT_HEIGHT=masked"
 
               if [ "$output_size" -gt 0 ] && [ "$output_size" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
                 mv "$tmp_output" "$file_path"
                 echo "SIZE_FIT_SUCCESS=1"
                 echo "SIZE_FIT_FINAL_BYTES=masked"
-                echo "SIZE_FIT_FINAL_HEIGHT=${target_height}"
-                echo "SIZE_FIT_AUDIO_MODE=copy"
+                echo "SIZE_FIT_FINAL_HEIGHT=masked"
+                echo "SIZE_FIT_AUDIO_MODE=masked"
 
                 SIZE_FIT_APPLIED_FINAL="1"
                 SIZE_FIT_FINAL_HEIGHT_FINAL="${target_height}"
@@ -1616,7 +1616,7 @@ jobs:
             echo "SENDING_TO_TELEGRAM=1"
             echo "TELEGRAM_SEND_MODE=${send_mode}"
             echo "SELECTED_FILE=masked"
-            echo "SELECTED_HEIGHT=${success_height}"
+            echo "SELECTED_HEIGHT=masked"
             echo "SELECTED_ATTEMPT=${attempt_label}"
             echo "SELECTED_SIZE_BYTES=masked"
 
@@ -1680,7 +1680,7 @@ jobs:
             echo "REMOTE_MEDIA_READY=1"
             echo "READY_TO_SEND=1"
             echo "READY_SIZE_BYTES=masked"
-            echo "READY_HEIGHT=${success_height}"
+            echo "READY_HEIGHT=masked"
             echo "READY_ATTEMPT=${attempt_label}"
             echo "READY_SEND_MODE=${send_mode}"
             echo "READY_SEND_METHOD=video"
@@ -1800,7 +1800,7 @@ jobs:
             fi
 
             echo "DOWNLOAD_SUCCESS=1"
-            echo "DOWNLOAD_SUCCESS_HEIGHT=${success_height}"
+            echo "DOWNLOAD_SUCCESS_HEIGHT=masked"
             echo "DOWNLOAD_SUCCESS_ATTEMPT=${attempt_label}"
             echo "::add-mask::${size_bytes}"
             echo "DOWNLOAD_SIZE_BYTES=masked"
@@ -1946,7 +1946,7 @@ jobs:
             echo ""
             echo "=============================="
             echo "ATTEMPT=${attempt_label}"
-            echo "TRY_HEIGHT=${height}"
+            echo "TRY_HEIGHT=masked"
             echo "FORMAT_SELECTOR=${format_selector}"
             echo "=============================="
 
@@ -2006,7 +2006,7 @@ jobs:
 
             echo "DOWNLOAD_FAILED=1"
             echo "ATTEMPT=${attempt_label}"
-            echo "HEIGHT=${height}"
+            echo "HEIGHT=masked"
             echo "RC=${rc}"
 
             return 1
