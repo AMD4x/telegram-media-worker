@@ -106,7 +106,7 @@ jobs:
             exit 1
           fi
 
-          echo "::add-mask::${GITHUB_API_TOKEN}"
+          echo "::add-mask::${SMARTBOT_GITHUB_TOKEN}"
           echo "::add-mask::${MEDIA_URL_INPUT}"
           echo "::add-mask::${TELEGRAM_TOKEN}"
           echo "::add-mask::${TELEGRAM_CHAT_ID}"
