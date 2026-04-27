@@ -806,16 +806,35 @@ def run_direct_path() -> bool:
 
 def run_ytdlp_fallback() -> bool:
     edit_progress(34, "Fallback", "Direct path failed; switching to yt-dlp")
+
     if REMOTE_MODE == "manual_quality" and max_height_num() is not None:
         heights = candidate_heights()
     else:
         heights = [None] + candidate_heights()
+
     for h in heights:
         path = ytdlp_download_for_height(h)
         if not path:
             continue
+
+        if REMOTE_MODE == "manual_quality" and h is not None:
+            summary = probe_summary(path)
+            actual_height = int(summary.get("height") or 0)
+
+            log("MANUAL_TARGET_HEIGHT", str(h))
+            log("MANUAL_ACTUAL_HEIGHT", str(actual_height))
+
+            if actual_height and actual_height != int(h):
+                log("MANUAL_HEIGHT_MISMATCH", f"{actual_height}_instead_of_{h}")
+                try:
+                    path.unlink()
+                except Exception:
+                    pass
+                continue
+
         if process_and_send(path, "ytdlp-auto" if h is None else f"ytdlp-{h}"):
             return True
+
     return False
 
 
