@@ -92,10 +92,17 @@ jobs:
 
           DIRECT_TELEGRAM_MAX_BYTES="50000000"
           LOCAL_BOT_API_MAX_BYTES="2000000000"
-          DOCUMENT_ZIP_SOURCE_MAX_BYTES="1990000000"
+          DOCUMENT_SPLIT_PART_BYTES="1850000000"
           TELEGRAM_TARGET_MAX_BYTES="1950000000"
           MAX_FILE_BYTES="$DIRECT_TELEGRAM_MAX_BYTES"
+
           YTDLP_MAX_FILESIZE="2000M"
+          YTDLP_MAX_FILESIZE_ARGS=()
+
+          if [ "$SEND_AS" != "document" ]; then
+            YTDLP_MAX_FILESIZE_ARGS=(--max-filesize "$YTDLP_MAX_FILESIZE")
+          fi
+
           CONCURRENT_FRAGMENTS="4"
           LOCAL_BOT_API_STARTED="0"
           SIZE_FIT_APPLIED_FINAL="0"
@@ -684,12 +691,6 @@ jobs:
               return 1
             fi
 
-            if [ "$source_size" -gt "$DOCUMENT_ZIP_SOURCE_MAX_BYTES" ]; then
-              echo "ERROR: Source document is too large to wrap safely as ZIP."
-              echo "DOCUMENT_ZIP_SOURCE_BYTES=${source_size}"
-              echo "DOCUMENT_ZIP_SOURCE_LIMIT_BYTES=${DOCUMENT_ZIP_SOURCE_MAX_BYTES}"
-              return 1
-            fi
 
             local zip_name
             local zip_path
@@ -805,7 +806,6 @@ jobs:
               --max-redirs 10 \
               --retry 2 \
               --retry-delay 2 \
-              --max-filesize "$DOCUMENT_ZIP_SOURCE_MAX_BYTES" \
               -o "$output_file" \
               "$SOURCE_URL"; then
               echo "DIRECT_DOCUMENT_DOWNLOAD_FAILED=1"
@@ -862,6 +862,262 @@ jobs:
 
             echo "ERROR: Document is larger than Telegram Local Bot API limit."
             return 1
+          }
+
+          prepare_document_send_files() {
+            set +e
+
+            local zip_path="$1"
+
+            if [ ! -f "$zip_path" ]; then
+              echo "ERROR: ZIP file is missing before send preparation."
+              return 1
+            fi
+
+            local zip_size
+            local manifest
+            local parts_count
+            local part_size
+            local part_path
+
+            zip_size="$(stat -c%s "$zip_path" 2>/dev/null || echo 0)"
+            manifest="work/document-send-files.txt"
+
+            rm -f "$manifest"
+
+            if [ "$zip_size" -le 0 ]; then
+              echo "ERROR: ZIP file is empty before send preparation."
+              return 1
+            fi
+
+            DOCUMENT_SPLIT_REQUIRED="0"
+            DOCUMENT_SPLIT_PARTS_COUNT="1"
+            DOCUMENT_SEND_MANIFEST="$manifest"
+            DOCUMENT_SPLIT_TOTAL_BYTES="$zip_size"
+
+            if [ "$zip_size" -le "$LOCAL_BOT_API_MAX_BYTES" ]; then
+              printf '%s\n' "$zip_path" > "$manifest"
+              echo "DOCUMENT_SPLIT_REQUIRED=0"
+              echo "DOCUMENT_SEND_FILES=single"
+              return 0
+            fi
+
+            progress_stage "splitting_document" "74" "Splitting" "Splitting_large_document_zip"
+
+            python3 - "$zip_path" "$DOCUMENT_SPLIT_PART_BYTES" "$manifest" <<'PY'
+          import os
+          import sys
+
+          zip_path = sys.argv[1]
+          part_size = int(sys.argv[2])
+          manifest = sys.argv[3]
+
+          base_name = os.path.basename(zip_path)
+          base_dir = os.path.dirname(zip_path) or "."
+          base_root, _base_ext = os.path.splitext(base_name)
+          if not base_root:
+              base_root = "telegram_document"
+          buffer_size = 4 * 1024 * 1024
+          part_paths = []
+
+          with open(zip_path, "rb") as src:
+              index = 1
+              while True:
+                  part_path = os.path.join(base_dir, f"{base_name}.{index:03d}")
+                  written = 0
+
+                  with open(part_path, "wb") as dst:
+                      while written < part_size:
+                          chunk = src.read(min(buffer_size, part_size - written))
+                          if not chunk:
+                              break
+                          dst.write(chunk)
+                          written += len(chunk)
+
+                  if written <= 0:
+                      try:
+                          os.remove(part_path)
+                      except FileNotFoundError:
+                          pass
+                      break
+
+                  part_paths.append(part_path)
+                  index += 1
+
+          with open(manifest, "w", encoding="utf-8") as out:
+              for part_path in part_paths:
+                  out.write(part_path + "\n")
+          PY
+
+            if [ ! -f "$manifest" ]; then
+              echo "ERROR: Document split manifest is missing."
+              return 1
+            fi
+
+            parts_count="$(grep -c . "$manifest" 2>/dev/null || echo 0)"
+
+            if [ "$parts_count" -le 1 ]; then
+              echo "ERROR: Document split did not produce enough parts."
+              return 1
+            fi
+
+            while IFS= read -r part_path; do
+              if [ ! -f "$part_path" ]; then
+                echo "ERROR: A split document part is missing."
+                return 1
+              fi
+
+              part_size="$(stat -c%s "$part_path" 2>/dev/null || echo 0)"
+              if [ "$part_size" -le 0 ] || [ "$part_size" -gt "$LOCAL_BOT_API_MAX_BYTES" ]; then
+                echo "ERROR: A split document part has invalid size."
+                echo "DOCUMENT_PART_SIZE_BYTES=${part_size}"
+                echo "DOCUMENT_PART_LIMIT_BYTES=${LOCAL_BOT_API_MAX_BYTES}"
+                return 1
+              fi
+
+              echo "::add-mask::${part_path}"
+              echo "::add-mask::$(basename "$part_path")"
+            done < "$manifest"
+
+            DOCUMENT_SPLIT_REQUIRED="1"
+            DOCUMENT_SPLIT_PARTS_COUNT="$parts_count"
+            DOCUMENT_SEND_MANIFEST="$manifest"
+            DOCUMENT_SPLIT_TOTAL_BYTES="$zip_size"
+
+            rm -f "$zip_path"
+
+            echo "DOCUMENT_SPLIT_REQUIRED=1"
+            echo "DOCUMENT_SPLIT_PARTS_COUNT=${parts_count}"
+            echo "DOCUMENT_SPLIT_PART_BYTES=${DOCUMENT_SPLIT_PART_BYTES}"
+            echo "DOCUMENT_SEND_MANIFEST=masked"
+
+            return 0
+          }
+
+          telegram_send_split_notice() {
+            local parts_count="$1"
+            local total_bytes="$2"
+
+            local total_size_text
+            local text
+
+            total_size_text="$(format_bytes_for_telegram "${total_bytes:-0}")"
+
+            printf -v text '📦 <b>Large GitHub Document</b>\n\nThe ZIP is larger than Telegram single-file limit, so it will be sent in <b>%s parts</b>.\n\n📥 <b>Total Size:</b> <code>%s</code>\nℹ️ <i>Download all parts, then join them in order to restore the original ZIP.</i>' \
+              "$parts_count" \
+              "$total_size_text"
+
+            curl -sS \
+              --connect-timeout 10 \
+              --max-time 20 \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+              -F "chat_id=${TELEGRAM_CHAT_ID}" \
+              -F "parse_mode=HTML" \
+              -F "disable_web_page_preview=true" \
+              -F "text=${text}" >/dev/null 2>&1 || true
+          }
+
+          send_document_parts_to_telegram() {
+            set +e
+
+            local manifest="$1"
+            local attempt_label="$2"
+
+            if [ ! -f "$manifest" ]; then
+              echo "ERROR: Document parts manifest is missing."
+              return 1
+            fi
+
+            local total_parts
+            local current_part
+            local part_path
+            local part_size
+            local api_base
+            local send_mode
+            local response_file
+            local http_code
+            local percent
+
+            total_parts="$(grep -c . "$manifest" 2>/dev/null || echo 0)"
+
+            if [ "$total_parts" -le 1 ]; then
+              echo "ERROR: Invalid split document parts count."
+              return 1
+            fi
+
+            echo "SENDING_SPLIT_DOCUMENT_TO_TELEGRAM=1"
+            echo "DOCUMENT_SPLIT_PARTS_COUNT=${total_parts}"
+            echo "DOCUMENT_SPLIT_TOTAL_BYTES=${DOCUMENT_SPLIT_TOTAL_BYTES:-0}"
+
+            telegram_send_split_notice "$total_parts" "${DOCUMENT_SPLIT_TOTAL_BYTES:-0}"
+
+            current_part=0
+
+            while IFS= read -r part_path; do
+              current_part=$((current_part + 1))
+
+              if [ ! -f "$part_path" ]; then
+                echo "ERROR: Split document part is missing before send."
+                return 1
+              fi
+
+              part_size="$(stat -c%s "$part_path" 2>/dev/null || echo 0)"
+
+              if [ "$part_size" -le 0 ] || [ "$part_size" -gt "$LOCAL_BOT_API_MAX_BYTES" ]; then
+                echo "ERROR: Split document part size is invalid before send."
+                echo "DOCUMENT_PART_INDEX=${current_part}"
+                echo "DOCUMENT_PART_SIZE_BYTES=${part_size}"
+                return 1
+              fi
+
+              if [ "$part_size" -le "$DIRECT_TELEGRAM_MAX_BYTES" ]; then
+                api_base="https://api.telegram.org/bot${TELEGRAM_TOKEN}"
+                send_mode="public"
+              else
+                start_local_bot_api_server || return 1
+                api_base="http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}"
+                send_mode="local"
+              fi
+
+              percent=$((90 + (current_part * 8 / total_parts)))
+              if [ "$percent" -gt 98 ]; then
+                percent=98
+              fi
+
+              echo "SENDING_DOCUMENT_PART=1"
+              echo "DOCUMENT_PART_INDEX=${current_part}"
+              echo "DOCUMENT_PARTS_TOTAL=${total_parts}"
+              echo "DOCUMENT_PART_SIZE_BYTES=${part_size}"
+              echo "DOCUMENT_PART_SEND_MODE=${send_mode}"
+              echo "DOCUMENT_PART_FILE=masked"
+
+              progress_stage "sending_part" "$percent" "Sending" "Sending_document_part_${current_part}_of_${total_parts}"
+
+              telegram_edit_document_summary                 "✅ <b>GitHub Document part ${current_part}/${total_parts}</b>"                 "⏳ <i>Sending split ZIP part to Telegram...</i>"                 "$part_size"                 "$send_mode"                 "Document part"                 "$(basename "$part_path")"
+
+              response_file="$RUNNER_TEMP/telegram-document-part-${current_part}.json"
+              http_code="$(telegram_send_document_request "$api_base" "$part_path" "$response_file")"
+
+              echo "TELEGRAM_DOCUMENT_PART_HTTP_CODE=${http_code}"
+
+              if ! is_success_http_code "$http_code" || ! grep -q '"ok":true' "$response_file"; then
+                echo "Telegram document part send failed."
+                echo "Telegram response is hidden for public-log safety."
+                return 1
+              fi
+
+              rm -f "$part_path"
+            done < "$manifest"
+
+            echo "TELEGRAM_SEND=success"
+            echo "TELEGRAM_SEND_METHOD=document_parts"
+            echo "FINAL_RESULT=success"
+
+            progress_stage "sent" "98" "Finalizing" "Telegram_document_parts_send_completed"
+
+            telegram_edit_document_summary               "✅ <b>GitHub Document completed</b>"               "📦 <i>Sent as ${total_parts} split ZIP parts.</i>"               "${DOCUMENT_SPLIT_TOTAL_BYTES:-0}"               "local"               "Document parts"               "$(basename "${DOCUMENT_ZIP_FILE:-document.zip}")"
+
+            return 0
           }
 
           normalize_media_for_sharing() {
@@ -1280,7 +1536,7 @@ jobs:
 
             curl -sS \
               --connect-timeout 20 \
-              --max-time 1800 \
+              --max-time 7200 \
               -o "$response_file" \
               -w "%{http_code}" \
               -X POST "${api_base}/sendDocument" \
@@ -1561,6 +1817,27 @@ jobs:
               fi
 
               DOWNLOAD_SIZE_BYTES_FINAL="$(stat -c%s "$file_path" 2>/dev/null || echo "$DOWNLOAD_SIZE_BYTES_FINAL")"
+              rm -f "$file_path"
+
+              prepare_document_send_files "$DOCUMENT_ZIP_FILE"
+              local document_prepare_rc=$?
+
+              if [ "$document_prepare_rc" -ne 0 ] || [ -z "${DOCUMENT_SEND_MANIFEST:-}" ]; then
+                echo "Document send preparation failed."
+                exit 1
+              fi
+
+              if [ "${DOCUMENT_SPLIT_REQUIRED:-0}" = "1" ]; then
+                send_document_parts_to_telegram "$DOCUMENT_SEND_MANIFEST" "$attempt_label"
+                local document_parts_send_rc=$?
+
+                if [ "$document_parts_send_rc" -eq 0 ]; then
+                  exit 0
+                fi
+
+                echo "Telegram split ZIP document send failed after successful download."
+                exit 1
+              fi
 
               ensure_document_fits_telegram_limit "$DOCUMENT_ZIP_FILE"
               local document_fit_rc=$?
@@ -1657,7 +1934,7 @@ jobs:
               --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
               --referer "$REFERER_URL" \
               --add-header "Accept-Language:en-US,en;q=0.9" \
-              --max-filesize "$YTDLP_MAX_FILESIZE" \
+              "${YTDLP_MAX_FILESIZE_ARGS[@]}" \
               -f "$format_selector" \
               -o "work/video.%(ext)s" \
               "${COOKIES_ARGS[@]}" \
@@ -1735,7 +2012,7 @@ jobs:
               --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
               --referer "$REFERER_URL" \
               --add-header "Accept-Language:en-US,en;q=0.9" \
-              --max-filesize "$YTDLP_MAX_FILESIZE" \
+              "${YTDLP_MAX_FILESIZE_ARGS[@]}" \
               -S "$sort_expr" \
               -o "work/video.%(ext)s" \
               "${COOKIES_ARGS[@]}" \
