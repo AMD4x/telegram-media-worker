@@ -69,7 +69,7 @@ PROGRESS_MESSAGE_ID = env("PROGRESS_MESSAGE_ID")
 TELEGRAM_API_ID = env("TELEGRAM_API_ID")
 TELEGRAM_API_HASH = env("TELEGRAM_API_HASH")
 GITHUB_RUN_URL = f"{env('GITHUB_SERVER_URL')}/{env('GITHUB_REPOSITORY')}/actions/runs/{env('GITHUB_RUN_ID')}"
-GITHUB_API_TOKEN = env("GITHUB_API_TOKEN")
+LIVE_CHOICE_API_TOKEN = env("SMARTBOT_GITHUB_TOKEN") or env("GITHUB_API_TOKEN")
 GITHUB_REPOSITORY = env("GITHUB_REPOSITORY")
 GITHUB_RUN_ID = env("GITHUB_RUN_ID")
 LIVE_MANUAL_TIMEOUT_SECONDS = 10
@@ -848,7 +848,7 @@ def live_choice_variable_name() -> str:
 
 
 def github_api_get_variable(name: str) -> dict[str, Any] | None:
-    if not GITHUB_API_TOKEN or not GITHUB_REPOSITORY:
+    if not LIVE_CHOICE_API_TOKEN or not GITHUB_REPOSITORY:
         log("LIVE_CHOICE_API_DISABLED", "missing_github_token_or_repo")
         return None
 
@@ -859,7 +859,7 @@ def github_api_get_variable(name: str) -> dict[str, Any] | None:
             "User-Agent": "SmartGitHubRemoteWorker/1.0",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "Authorization": f"Bearer {GITHUB_API_TOKEN}",
+            "Authorization": f"Bearer {LIVE_CHOICE_API_TOKEN}",
         },
         method="GET",
     )
