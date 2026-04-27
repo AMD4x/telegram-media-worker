@@ -1055,10 +1055,10 @@ def run_interactive_manual() -> int:
 
     edit_progress(35, "Selected", f"Manual quality selected: {selected_height}p")
 
-    if run_direct_path():
+    if run_ytdlp_fallback():
         return 0
 
-    if run_ytdlp_fallback():
+    if run_direct_path():
         return 0
 
     edit_progress(100, "Failed", "Selected manual quality failed")
@@ -1102,10 +1102,16 @@ def main() -> int:
         if REMOTE_MODE == "interactive_manual":
             return run_interactive_manual()
 
-        if run_direct_path():
-            return 0
-        if run_ytdlp_fallback():
-            return 0
+        if REMOTE_MODE == "auto_best":
+            if run_ytdlp_fallback():
+                return 0
+            if run_direct_path():
+                return 0
+        else:
+            if run_direct_path():
+                return 0
+            if run_ytdlp_fallback():
+                return 0
         edit_progress(100, "Failed", "All GitHub Remote smart paths failed")
         log("FINAL_RESULT", "failed_all_paths")
         return 1
