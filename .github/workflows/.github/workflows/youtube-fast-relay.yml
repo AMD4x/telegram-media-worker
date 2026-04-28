@@ -1,0 +1,294 @@
+name: YouTube Fast Relay
+
+run-name: "YT Fast ${{ inputs.dispatch_key }} · f=${{ inputs.format_id }} · h=${{ inputs.max_height }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      media_url:
+        description: "YouTube URL"
+        required: true
+        type: string
+
+      max_height:
+        description: "Max height fallback when format_id is empty"
+        required: true
+        default: "360"
+        type: choice
+        options:
+          - "360"
+          - "480"
+          - "720"
+          - "1080"
+
+      format_id:
+        description: "Prepared yt-dlp format id from bot, e.g. 18"
+        required: false
+        type: string
+
+      expected_size_bytes:
+        description: "Expected size from bot; used for early safety check"
+        required: false
+        type: string
+
+      dispatch_key:
+        description: "Dispatch key"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  youtube_fast_relay:
+    name: Download one prepared format and send video
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
+      MEDIA_URL: ${{ inputs.media_url }}
+      MAX_HEIGHT: ${{ inputs.max_height }}
+      FORMAT_ID_INPUT: ${{ inputs.format_id }}
+      EXPECTED_SIZE_BYTES_INPUT: ${{ inputs.expected_size_bytes }}
+      TELEGRAM_PUBLIC_MAX_BYTES: "50000000"
+
+    steps:
+      - name: Validate inputs and secrets
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MEDIA_URL:-}" ]; then
+            echo "ERROR: Missing media_url."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_TOKEN:-}" ]; then
+            echo "ERROR: Missing TELEGRAM_TOKEN secret."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "ERROR: Missing TELEGRAM_CHAT_ID secret."
+            exit 1
+          fi
+
+          echo "::add-mask::${TELEGRAM_TOKEN}"
+          echo "::add-mask::${TELEGRAM_CHAT_ID}"
+          echo "::add-mask::${MEDIA_URL}"
+
+          if [ -n "${YOUTUBE_COOKIES_TXT:-}" ]; then
+            echo "::add-mask::${YOUTUBE_COOKIES_TXT}"
+          fi
+
+          echo "YOUTUBE_FAST_RELAY=1"
+          echo "MAX_HEIGHT=${MAX_HEIGHT}"
+          echo "FORMAT_ID_INPUT=${FORMAT_ID_INPUT:-}"
+          echo "EXPECTED_SIZE_BYTES_INPUT=${EXPECTED_SIZE_BYTES_INPUT:-}"
+
+      - name: Install yt-dlp
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user --quiet --upgrade "yt-dlp[default]"
+          python3 -m yt_dlp --version
+
+      - name: Prepare cookies
+        id: cookies
+        run: |
+          set -euo pipefail
+
+          if [ -n "${YOUTUBE_COOKIES_TXT:-}" ]; then
+            COOKIES_FILE="${RUNNER_TEMP}/youtube-cookies.txt"
+            umask 077
+            printf '%s\n' "${YOUTUBE_COOKIES_TXT}" > "${COOKIES_FILE}"
+            sed -i 's/\r$//' "${COOKIES_FILE}"
+
+            echo "cookies_file=${COOKIES_FILE}" >> "$GITHUB_OUTPUT"
+            echo "YOUTUBE_COOKIES=enabled"
+          else
+            echo "cookies_file=" >> "$GITHUB_OUTPUT"
+            echo "YOUTUBE_COOKIES=disabled"
+          fi
+
+      - name: Choose prepared format
+        id: choose
+        env:
+          COOKIES_FILE: ${{ steps.cookies.outputs.cookies_file }}
+        run: |
+          set -euo pipefail
+
+          # إذا البوت أرسل format_id جاهزًا، لا نعيد فحص الجودات.
+          if [ -n "${FORMAT_ID_INPUT:-}" ]; then
+            FORMAT_ID="${FORMAT_ID_INPUT}"
+            SIZE_BYTES="${EXPECTED_SIZE_BYTES_INPUT:-0}"
+
+            if ! echo "${SIZE_BYTES}" | grep -Eq '^[0-9]+$'; then
+              SIZE_BYTES="0"
+            fi
+
+            if [ "${SIZE_BYTES}" -gt "${TELEGRAM_PUBLIC_MAX_BYTES}" ]; then
+              echo "ERROR: Expected file is larger than public Telegram Bot API limit."
+              echo "EXPECTED_SIZE_BYTES=${SIZE_BYTES}"
+              echo "LIMIT_BYTES=${TELEGRAM_PUBLIC_MAX_BYTES}"
+              exit 66
+            fi
+
+            {
+              echo "format_id=${FORMAT_ID}"
+              echo "size_bytes=${SIZE_BYTES}"
+              echo "selection_mode=prepared"
+            } >> "$GITHUB_OUTPUT"
+
+            echo "SELECTION_MODE=prepared"
+            echo "FORMAT_ID=${FORMAT_ID}"
+            echo "SIZE_BYTES=${SIZE_BYTES}"
+            exit 0
+          fi
+
+          # fallback: اختيار Progressive MP4 واحد فقط، بدون دمج.
+          python3 - <<'PY'
+          import os
+          from yt_dlp import YoutubeDL
+
+          media_url = os.environ["MEDIA_URL"]
+          max_height = int(os.environ.get("MAX_HEIGHT") or "360")
+          cookies_file = os.environ.get("COOKIES_FILE") or ""
+          public_limit = int(os.environ.get("TELEGRAM_PUBLIC_MAX_BYTES") or "50000000")
+
+          selector = (
+              f"18/"
+              f"b[height<={max_height}][ext=mp4][acodec!=none]/"
+              f"best[height<={max_height}][ext=mp4][acodec!=none]/"
+              f"best[height<={max_height}]"
+          )
+
+          opts = {
+              "quiet": True,
+              "no_warnings": True,
+              "noplaylist": True,
+              "skip_download": True,
+              "format": selector,
+              "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "extractor_args": {
+                  "youtube": {
+                      "player_client": ["android_vr"],
+                  }
+              },
+          }
+
+          if cookies_file:
+              opts["cookiefile"] = cookies_file
+
+          with YoutubeDL(opts) as ydl:
+              info = ydl.extract_info(media_url, download=False)
+
+          if info.get("requested_formats"):
+              raise SystemExit("ERROR: Fast relay requires one progressive file, but yt-dlp selected multiple formats.")
+
+          fmt_id = str(info.get("format_id") or "").strip()
+          if not fmt_id:
+              raise SystemExit("ERROR: No selected format_id.")
+
+          size = info.get("filesize") or info.get("filesize_approx") or 0
+          try:
+              size = int(size or 0)
+          except Exception:
+              size = 0
+
+          if size and size > public_limit:
+              raise SystemExit(f"ERROR: Selected file is too large for public Bot API: {size} > {public_limit}")
+
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as f:
+              f.write(f"format_id={fmt_id}\n")
+              f.write(f"size_bytes={size}\n")
+              f.write("selection_mode=fallback\n")
+
+          print("SELECTION_MODE=fallback")
+          print(f"FORMAT_ID={fmt_id}")
+          print(f"SIZE_BYTES={size}")
+          print(f"MAX_HEIGHT={max_height}")
+          PY
+
+      - name: Download selected format
+        env:
+          COOKIES_FILE: ${{ steps.cookies.outputs.cookies_file }}
+          FORMAT_ID: ${{ steps.choose.outputs.format_id }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p work
+
+          COOKIES_ARGS=()
+          if [ -n "${COOKIES_FILE:-}" ]; then
+            COOKIES_ARGS=(--cookies "${COOKIES_FILE}")
+          fi
+
+          echo "Downloading selected format only..."
+          echo "FORMAT_ID=${FORMAT_ID}"
+
+          python3 -m yt_dlp \
+            --no-playlist \
+            --extractor-args "youtube:player_client=android_vr" \
+            "${COOKIES_ARGS[@]}" \
+            --max-filesize 49M \
+            -f "${FORMAT_ID}" \
+            -o "work/youtube_fast.%(ext)s" \
+            "${MEDIA_URL}"
+
+          FILE_PATH="$(find work -maxdepth 1 -type f | head -n 1)"
+
+          if [ -z "${FILE_PATH}" ] || [ ! -f "${FILE_PATH}" ]; then
+            echo "ERROR: Downloaded file not found."
+            exit 1
+          fi
+
+          SIZE_BYTES="$(stat -c%s "${FILE_PATH}")"
+
+          if [ "${SIZE_BYTES}" -le 0 ]; then
+            echo "ERROR: Downloaded file is empty."
+            exit 1
+          fi
+
+          if [ "${SIZE_BYTES}" -gt "${TELEGRAM_PUBLIC_MAX_BYTES}" ]; then
+            echo "ERROR: Downloaded file exceeds public Bot API limit."
+            echo "SIZE_BYTES=${SIZE_BYTES}"
+            echo "LIMIT_BYTES=${TELEGRAM_PUBLIC_MAX_BYTES}"
+            exit 66
+          fi
+
+          echo "FILE_PATH=${FILE_PATH}" >> "$GITHUB_ENV"
+          echo "FINAL_SIZE_BYTES=${SIZE_BYTES}" >> "$GITHUB_ENV"
+
+          echo "Downloaded file:"
+          ls -lh "${FILE_PATH}"
+
+      - name: Send video to Telegram
+        run: |
+          set -euo pipefail
+
+          if [ -z "${FILE_PATH:-}" ] || [ ! -f "${FILE_PATH}" ]; then
+            echo "ERROR: FILE_PATH missing."
+            exit 1
+          fi
+
+          echo "Sending via public Telegram Bot API..."
+          echo "FINAL_SIZE_BYTES=${FINAL_SIZE_BYTES:-0}"
+
+          curl -sS --fail-with-body \
+            --connect-timeout 10 \
+            --max-time 300 \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendVideo" \
+            -F "chat_id=${TELEGRAM_CHAT_ID}" \
+            -F "video=@${FILE_PATH}" \
+            -F "supports_streaming=true" \
+            -F "caption=⚡ YouTube Fast Relay · format=${{ steps.choose.outputs.format_id }} · size=${FINAL_SIZE_BYTES:-0} bytes"
+
+          echo
+          echo "YOUTUBE_FAST_RELAY_DONE=1"
