@@ -177,7 +177,7 @@ jobs:
               "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
               "extractor_args": {
                   "youtube": {
-                      "player_client": ["android_vr"],
+                      "player_client": ["android"],
                   }
               },
           }
@@ -235,7 +235,7 @@ jobs:
 
           python3 -m yt_dlp \
             --no-playlist \
-            --extractor-args "youtube:player_client=android_vr" \
+            --extractor-args "youtube:player_client=android" \
             "${COOKIES_ARGS[@]}" \
             --max-filesize 49M \
             -f "${FORMAT_ID}" \
