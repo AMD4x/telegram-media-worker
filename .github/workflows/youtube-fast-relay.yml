@@ -226,22 +226,17 @@ jobs:
           mkdir -p work
 
           COOKIES_ARGS=()
-
-          # في وضع prepared format لا نمرّر الكوكيز؛
-          # لأن yt-dlp يتجاهل Android clients عند وجود cookies،
-          # وهذا كان سبب فشل format=18 في GitHub.
-          if [ -z "${FORMAT_ID_INPUT:-}" ] && [ -n "${COOKIES_FILE:-}" ]; then
+          if [ -n "${COOKIES_FILE:-}" ]; then
             COOKIES_ARGS=(--cookies "${COOKIES_FILE}")
           fi
 
           echo "Downloading selected format only..."
           echo "FORMAT_ID=${FORMAT_ID}"
-          echo "PREPARED_FORMAT_MODE=$([ -n "${FORMAT_ID_INPUT:-}" ] && echo yes || echo no)"
           echo "COOKIES_FOR_DOWNLOAD=$([ "${#COOKIES_ARGS[@]}" -gt 0 ] && echo enabled || echo disabled)"
+          echo "EXTRACTOR_CLIENT=default"
 
           python3 -m yt_dlp \
             --no-playlist \
-            --extractor-args "youtube:player_client=android_vr" \
             "${COOKIES_ARGS[@]}" \
             --max-filesize 49M \
             -f "${FORMAT_ID}" \
