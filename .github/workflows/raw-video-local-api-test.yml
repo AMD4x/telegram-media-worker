@@ -171,7 +171,7 @@ jobs:
             exit 1
           fi
 
-          echo "== Send as video without conversion =="
+          echo "== Send as video after muxing only =="
           HTTP_CODE="$(curl -sS \
             --connect-timeout 20 \
             --max-time 7200 \
