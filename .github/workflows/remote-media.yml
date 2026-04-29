@@ -33,6 +33,14 @@ on:
         description: "Output document filename"
         required: false
         type: string
+      document_mode:
+        description: "Document mode"
+        required: false
+        default: "zip"
+        type: choice
+        options:
+          - "zip"
+          - "original"
       progress_chat_id:
         description: "Telegram progress chat id"
         required: false
@@ -79,6 +87,7 @@ jobs:
           MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
           SEND_AS_INPUT: ${{ inputs.send_as }}
           OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
+          DOCUMENT_MODE_INPUT: ${{ inputs.document_mode }}
           PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
           PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
         run: |
@@ -90,9 +99,22 @@ jobs:
           MAX_HEIGHT="$MAX_HEIGHT_INPUT"
           SEND_AS="$SEND_AS_INPUT"
           OUTPUT_FILENAME="${OUTPUT_FILENAME_INPUT:-}"
+          DOCUMENT_MODE="${DOCUMENT_MODE_INPUT:-zip}"
 
           if [ "$SEND_AS" != "document" ]; then
             SEND_AS="video"
+          fi
+
+          if [ "$SEND_AS" = "document" ]; then
+            case "$DOCUMENT_MODE" in
+              original|zip)
+                ;;
+              *)
+                DOCUMENT_MODE="zip"
+                ;;
+            esac
+          else
+            DOCUMENT_MODE="zip"
           fi
 
           DIRECT_TELEGRAM_MAX_BYTES="50000000"
@@ -1991,6 +2013,40 @@ jobs:
             if [ "${SEND_AS:-video}" = "document" ]; then
               FINAL_SIZE_STATUS="OK"
               INPUT_VIDEO_CODEC_FINAL="Original"
+
+              if [ "${DOCUMENT_MODE:-zip}" = "original" ]; then
+                OUTPUT_VIDEO_CODEC_FINAL="Original"
+
+                document_file_name="$(sanitize_document_file_name "${OUTPUT_FILENAME:-}" "$(basename "$file_path")")"
+                document_file_path="work/${document_file_name}"
+
+                if [ "$file_path" != "$document_file_path" ]; then
+                  rm -f "$document_file_path"
+                  mv "$file_path" "$document_file_path"
+                  file_path="$document_file_path"
+                fi
+
+                DOWNLOAD_SIZE_BYTES_FINAL="$(stat -c%s "$file_path" 2>/dev/null || echo "$DOWNLOAD_SIZE_BYTES_FINAL")"
+
+                ensure_document_fits_telegram_limit "$file_path"
+                local original_document_fit_rc=$?
+
+                if [ "$original_document_fit_rc" -ne 0 ]; then
+                  echo "Original document exceeded Telegram limit or failed size check."
+                  exit 1
+                fi
+
+                send_to_telegram "$file_path" "document" "$attempt_label"
+                local original_document_send_rc=$?
+
+                if [ "$original_document_send_rc" -eq 0 ]; then
+                  exit 0
+                fi
+
+                echo "Telegram original document send failed after successful download."
+                exit 1
+              fi
+
               OUTPUT_VIDEO_CODEC_FINAL="ZIP"
               DOCUMENT_ZIP_FILE=""
               DOCUMENT_ZIP_INNER_NAME=""
