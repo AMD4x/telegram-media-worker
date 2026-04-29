@@ -1602,6 +1602,8 @@ jobs:
             local api_log
             local response_file
             local i
+            local getme_http_code
+            local port_http_code
 
             api_dir="$RUNNER_TEMP/telegram-bot-api"
             api_log="$RUNNER_TEMP/telegram-bot-api.log"
@@ -1630,19 +1632,38 @@ jobs:
                 return 1
               fi
 
-              if curl -sS \
-                --connect-timeout 2 \
-                --max-time 5 \
-                -o "$response_file" \
-                "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" >/dev/null 2>&1; then
-                if grep -q '"ok":true' "$response_file"; then
-                  echo "LOCAL_BOT_API_READY=1"
-                  LOCAL_BOT_API_STARTED="1"
+              port_http_code="$(
+                curl -sS \
+                  --connect-timeout 1 \
+                  --max-time 2 \
+                  -o /dev/null \
+                  -w "%{http_code}" \
+                  "http://127.0.0.1:8081/" 2>/dev/null || true
+              )"
 
-                  progress_stage "local_bot_api_ready" "88" "Sender_ready" "Local_Bot_API_ready"
+              getme_http_code="$(
+                curl -sS \
+                  --connect-timeout 2 \
+                  --max-time 5 \
+                  -o "$response_file" \
+                  -w "%{http_code}" \
+                  "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" 2>/dev/null || true
+              )"
 
-                  return 0
-                fi
+              if [ "$getme_http_code" = "200" ] && grep -q '"ok":true' "$response_file"; then
+                echo "LOCAL_BOT_API_READY=1"
+                LOCAL_BOT_API_STARTED="1"
+
+                progress_stage "local_bot_api_ready" "88" "Sender_ready" "Local_Bot_API_ready"
+
+                return 0
+              fi
+
+              if [ "$i" = "1" ] || [ "$i" = "30" ] || [ "$i" = "60" ] || [ "$i" = "90" ]; then
+                echo "LOCAL_BOT_API_WAIT=${i}/90"
+                echo "LOCAL_BOT_API_PROCESS=alive"
+                echo "LOCAL_BOT_API_PORT_HTTP_CODE=${port_http_code:-000}"
+                echo "LOCAL_BOT_API_GETME_HTTP_CODE=${getme_http_code:-000}"
               fi
 
               sleep 1
