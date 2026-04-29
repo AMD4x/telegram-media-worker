@@ -298,6 +298,35 @@ jobs:
             [ "${audio_count:-0}" -gt 0 ]
           }
 
+          media_is_telegram_video_compatible() {
+            local file_path="$1"
+
+            if [ ! -f "$file_path" ]; then
+              return 1
+            fi
+
+            local video_codec
+            local audio_codec
+
+            video_codec="$(
+              ffprobe -v error \
+                -select_streams v:0 \
+                -show_entries stream=codec_name \
+                -of default=noprint_wrappers=1:nokey=1 \
+                "$file_path" 2>/dev/null | head -n 1 || true
+            )"
+
+            audio_codec="$(
+              ffprobe -v error \
+                -select_streams a:0 \
+                -show_entries stream=codec_name \
+                -of default=noprint_wrappers=1:nokey=1 \
+                "$file_path" 2>/dev/null | head -n 1 || true
+            )"
+
+            [ "$video_codec" = "h264" ] && [ "$audio_codec" = "aac" ]
+          }
+
           remux_to_mp4_if_needed() {
             local input_file="$1"
             local output_file="$2"
@@ -305,13 +334,6 @@ jobs:
             if [ ! -f "$input_file" ]; then
               return 1
             fi
-
-            case "$input_file" in
-              *.mp4)
-                printf "%s" "$input_file"
-                return 0
-                ;;
-            esac
 
             rm -f "$output_file"
 
@@ -392,12 +414,19 @@ jobs:
               return 1
             fi
 
+            if ! media_is_telegram_video_compatible "$CANDIDATE_FILE"; then
+              echo "TIKTOK_UNSUPPORTED_CODEC=1"
+              rm -f "$CANDIDATE_FILE"
+              return 1
+            fi
+
             MEDIA_FILE="$CANDIDATE_FILE"
             return 0
           }
 
           download_tikwm_candidate() {
             local api_json
+            local candidate_key
             local candidate_url
             local output_file
             local curl_log
@@ -422,66 +451,66 @@ jobs:
               return 1
             fi
 
-            candidate_url="$(
-              sed -nE 's/.*"hdplay"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$api_json" | head -n 1
-            )"
-
-            if [ -z "${candidate_url:-}" ]; then
+            for candidate_key in play hdplay wmplay; do
               candidate_url="$(
-                sed -nE 's/.*"play"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$api_json" | head -n 1
+                sed -nE 's/.*"'"$candidate_key"'"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$api_json" | head -n 1
               )"
-            fi
 
-            if [ -z "${candidate_url:-}" ]; then
-              candidate_url="$(
-                sed -nE 's/.*"wmplay"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$api_json" | head -n 1
-              )"
-            fi
+              candidate_url="$(printf '%s' "${candidate_url:-}" | sed 's#\\/#/#g; s#\\u0026#\&#g')"
 
-            candidate_url="$(printf '%s' "${candidate_url:-}" | sed 's#\\/#/#g; s#\\u0026#\&#g')"
+              if [ -z "${candidate_url:-}" ]; then
+                continue
+              fi
 
-            if [ -z "${candidate_url:-}" ]; then
-              echo "TIKWM_DIRECT_URL_MISSING=1"
-              return 1
-            fi
+              if ! printf '%s' "$candidate_url" | grep -Eq '^https?://'; then
+                echo "TIKWM_DIRECT_URL_INVALID=1"
+                continue
+              fi
 
-            if ! printf '%s' "$candidate_url" | grep -Eq '^https?://'; then
-              echo "TIKWM_DIRECT_URL_INVALID=1"
-              return 1
-            fi
+              echo "::add-mask::${candidate_url}"
 
-            echo "::add-mask::${candidate_url}"
+              rm -f "$output_file" "$curl_log"
 
-            update_progress 40 "Downloading" "Downloading TikTok direct video..."
+              update_progress 40 "Downloading" "Downloading TikTok direct video..."
 
-            if ! curl -sS -fL \
-              --connect-timeout 20 \
-              --max-time 1800 \
-              --retry 2 \
-              --retry-delay 2 \
-              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-              --referer "https://www.tiktok.com/" \
-              -o "$output_file" \
-              "$candidate_url" > "$curl_log" 2>&1; then
-              echo "TIKWM_DOWNLOAD_FAILED=1"
-              rm -f "$output_file"
-              return 1
-            fi
+              if ! curl -sS -fL \
+                --connect-timeout 20 \
+                --max-time 1800 \
+                --retry 2 \
+                --retry-delay 2 \
+                --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+                --referer "https://www.tiktok.com/" \
+                -o "$output_file" \
+                "$candidate_url" > "$curl_log" 2>&1; then
+                echo "TIKWM_DOWNLOAD_FAILED=1"
+                rm -f "$output_file"
+                continue
+              fi
 
-            if [ ! -f "$output_file" ]; then
-              echo "TIKWM_OUTPUT_MISSING=1"
-              return 1
-            fi
+              if [ ! -f "$output_file" ]; then
+                echo "TIKWM_OUTPUT_MISSING=1"
+                continue
+              fi
 
-            if ! media_has_audio_stream "$output_file"; then
-              echo "TIKWM_NO_AUDIO_STREAM=1"
-              rm -f "$output_file"
-              return 1
-            fi
+              if ! media_has_audio_stream "$output_file"; then
+                echo "TIKWM_NO_AUDIO_STREAM=1"
+                rm -f "$output_file"
+                continue
+              fi
 
-            MEDIA_FILE="$output_file"
-            echo "TIKWM_DOWNLOAD_SUCCESS=1"
-            return 0
+              if ! media_is_telegram_video_compatible "$output_file"; then
+                echo "TIKWM_UNSUPPORTED_CODEC=1"
+                rm -f "$output_file"
+                continue
+              fi
+
+              MEDIA_FILE="$output_file"
+              echo "TIKWM_DOWNLOAD_SUCCESS=1"
+              return 0
+            done
+
+            echo "TIKWM_NO_USABLE_CANDIDATE=1"
+            return 1
           }
 
           MEDIA_FILE=""
@@ -522,6 +551,16 @@ jobs:
           fi
 
           MEDIA_FILE="$REMUXED_FILE"
+
+          if ! media_has_audio_stream "$MEDIA_FILE"; then
+            echo "ERROR: Prepared TikTok file has no audio stream."
+            exit 1
+          fi
+
+          if ! media_is_telegram_video_compatible "$MEDIA_FILE"; then
+            echo "ERROR: Prepared TikTok file is not Telegram video compatible."
+            exit 1
+          fi
 
           SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
 
