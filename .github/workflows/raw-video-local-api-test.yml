@@ -129,7 +129,7 @@ jobs:
             sleep 1
           done
 
-          echo "== Download raw media =="
+          echo "== Download best video and audio, then merge without re-encode =="
           python3 -m yt_dlp \
             "${COOKIES_ARGS[@]}" \
             --no-playlist \
@@ -141,7 +141,8 @@ jobs:
             --no-part \
             --restrict-filenames \
             -S "res,fps,tbr,filesize" \
-            -f "best[protocol^=http][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]/best" \
+            -f "bestvideo[vcodec!=none]+bestaudio[acodec!=none]/best[vcodec!=none][acodec!=none]/best" \
+            --merge-output-format mp4 \
             -o "work/raw_video.%(ext)s" \
             "$MEDIA_URL"
 
@@ -196,4 +197,4 @@ jobs:
             exit 1
           fi
 
-          echo "OK: Raw file was sent through sendVideo without conversion."
+          echo "OK: Merged file was sent through sendVideo without re-encode."
