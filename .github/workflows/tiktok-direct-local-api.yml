@@ -298,6 +298,25 @@ jobs:
             [ "${audio_count:-0}" -gt 0 ]
           }
 
+          media_has_video_stream() {
+            local file_path="$1"
+
+            if [ ! -f "$file_path" ]; then
+              return 1
+            fi
+
+            local video_count
+            video_count="$(
+              ffprobe -v error \
+                -select_streams v \
+                -show_entries stream=index \
+                -of csv=p=0 \
+                "$file_path" 2>/dev/null | grep -c . || true
+            )"
+
+            [ "${video_count:-0}" -gt 0 ]
+          }
+
           media_is_telegram_video_compatible() {
             local file_path="$1"
 
@@ -443,6 +462,12 @@ jobs:
               return 1
             fi
 
+            if ! media_has_video_stream "$CANDIDATE_FILE"; then
+              echo "TIKTOK_NO_VIDEO_STREAM=1"
+              rm -f "$CANDIDATE_FILE"
+              return 1
+            fi
+
             if ! media_has_audio_stream "$CANDIDATE_FILE"; then
               echo "TIKTOK_NO_AUDIO_STREAM=1"
               rm -f "$CANDIDATE_FILE"
@@ -539,6 +564,12 @@ jobs:
                 continue
               fi
 
+              if ! media_has_video_stream "$output_file"; then
+                echo "TIKWM_NO_VIDEO_STREAM=1"
+                rm -f "$output_file"
+                continue
+              fi
+
               if ! media_has_audio_stream "$output_file"; then
                 echo "TIKWM_NO_AUDIO_STREAM=1"
                 rm -f "$output_file"
@@ -570,7 +601,7 @@ jobs:
               transcoded_file="$(transcode_to_telegram_video "$transcode_source_file" "work/tiktok_video_tikwm_transcoded.mp4" || true)"
 
               if [ -n "${transcoded_file:-}" ] && [ -f "$transcoded_file" ]; then
-                if media_has_audio_stream "$transcoded_file" && media_is_telegram_video_compatible "$transcoded_file"; then
+                if media_has_video_stream "$transcoded_file" && media_has_audio_stream "$transcoded_file" && media_is_telegram_video_compatible "$transcoded_file"; then
                   MEDIA_FILE="$transcoded_file"
                   rm -f "$transcode_source_file"
                   echo "TIKWM_TRANSCODE_SUCCESS=1"
@@ -625,6 +656,11 @@ jobs:
 
           update_progress 65 "Checking" "Checking TikTok audio stream..."
 
+          if ! media_has_video_stream "$MEDIA_FILE"; then
+            echo "ERROR: Final TikTok file has no video stream."
+            exit 1
+          fi
+
           if ! media_has_audio_stream "$MEDIA_FILE"; then
             echo "ERROR: Final TikTok file has no audio stream."
             exit 1
@@ -640,6 +676,11 @@ jobs:
           fi
 
           MEDIA_FILE="$REMUXED_FILE"
+
+          if ! media_has_video_stream "$MEDIA_FILE"; then
+            echo "ERROR: Prepared TikTok file has no video stream."
+            exit 1
+          fi
 
           if ! media_has_audio_stream "$MEDIA_FILE"; then
             echo "ERROR: Prepared TikTok file has no audio stream."
