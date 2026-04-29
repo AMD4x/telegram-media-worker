@@ -1,0 +1,198 @@
+name: Raw Video Local API Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      media_url:
+        description: "Media URL"
+        required: true
+        default: "https://www.facebook.com/share/v/14Unifahc5Z/"
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  raw_video_send:
+    name: Download raw and send as video
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    container:
+      image: ghcr.io/ad4x/tg-video-worker:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Download raw video and send through Local Bot API
+        env:
+          MEDIA_URL: ${{ inputs.media_url }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          FACEBOOK_COOKIES_TXT: ${{ secrets.FACEBOOK_COOKIES_TXT }}
+        run: |
+          set -euo pipefail
+
+          echo "== Raw Video Local API Test =="
+          echo "::add-mask::${MEDIA_URL}"
+
+          if [ -z "${TELEGRAM_TOKEN:-}" ]; then
+            echo "ERROR: TELEGRAM_TOKEN secret is missing."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "ERROR: TELEGRAM_CHAT_ID secret is missing."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_API_ID:-}" ]; then
+            echo "ERROR: TELEGRAM_API_ID secret is missing."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_API_HASH:-}" ]; then
+            echo "ERROR: TELEGRAM_API_HASH secret is missing."
+            exit 1
+          fi
+
+          echo "::add-mask::${TELEGRAM_TOKEN}"
+          echo "::add-mask::${TELEGRAM_CHAT_ID}"
+          echo "::add-mask::${TELEGRAM_API_ID}"
+          echo "::add-mask::${TELEGRAM_API_HASH}"
+
+          if ! command -v telegram-bot-api >/dev/null 2>&1; then
+            echo "ERROR: telegram-bot-api is missing from worker image."
+            exit 1
+          fi
+
+          if ! command -v yt-dlp >/dev/null 2>&1 && ! python3 -m yt_dlp --version >/dev/null 2>&1; then
+            echo "ERROR: yt-dlp is missing from worker image."
+            exit 1
+          fi
+
+          mkdir -p work
+          mkdir -p "$RUNNER_TEMP/telegram-bot-api"
+
+          COOKIES_ARGS=()
+          if [ -n "${FACEBOOK_COOKIES_TXT:-}" ]; then
+            COOKIES_FILE="$RUNNER_TEMP/facebook-cookies.txt"
+            umask 077
+            printf '%s\n' "$FACEBOOK_COOKIES_TXT" > "$COOKIES_FILE"
+            sed -i 's/\r$//' "$COOKIES_FILE"
+            COOKIES_ARGS=(--cookies "$COOKIES_FILE")
+            echo "FACEBOOK_COOKIES=enabled"
+          else
+            echo "FACEBOOK_COOKIES=disabled"
+          fi
+
+          echo "== Start Local Bot API =="
+          telegram-bot-api \
+            --api-id="${TELEGRAM_API_ID}" \
+            --api-hash="${TELEGRAM_API_HASH}" \
+            --local \
+            --http-ip-address=127.0.0.1 \
+            --http-port=8081 \
+            --dir="$RUNNER_TEMP/telegram-bot-api" \
+            > "$RUNNER_TEMP/telegram-bot-api.log" 2>&1 &
+
+          TELEGRAM_BOT_API_PID="$!"
+
+          cleanup() {
+            kill "$TELEGRAM_BOT_API_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          echo "== Wait for Local Bot API =="
+          for i in $(seq 1 30); do
+            if curl -sS "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" \
+              | grep -q '"ok":true'; then
+              echo "LOCAL_BOT_API_READY=1"
+              break
+            fi
+
+            if [ "$i" -eq 30 ]; then
+              echo "ERROR: Local Bot API did not become ready."
+              echo "== telegram-bot-api log tail =="
+              tail -n 80 "$RUNNER_TEMP/telegram-bot-api.log" || true
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          echo "== Download raw media =="
+          python3 -m yt_dlp \
+            "${COOKIES_ARGS[@]}" \
+            --no-playlist \
+            --no-write-info-json \
+            --no-write-thumbnail \
+            --no-write-description \
+            --no-write-comments \
+            --no-cache-dir \
+            --no-part \
+            --restrict-filenames \
+            -f "best[vcodec!=none][acodec!=none]/best[vcodec!=none]/best" \
+            -o "work/raw_video.%(ext)s" \
+            "$MEDIA_URL"
+
+          MEDIA_FILE="$(find work -maxdepth 1 -type f -name 'raw_video.*' | head -n 1)"
+
+          if [ -z "$MEDIA_FILE" ] || [ ! -f "$MEDIA_FILE" ]; then
+            echo "ERROR: Downloaded media file was not found."
+            find work -maxdepth 1 -type f -printf '%p\n' || true
+            exit 1
+          fi
+
+          SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
+          EXTENSION="${MEDIA_FILE##*.}"
+
+          echo "DOWNLOADED_FILE=masked"
+          echo "EXTENSION=${EXTENSION}"
+          echo "SIZE_BYTES=${SIZE_BYTES}"
+
+          if [ "$SIZE_BYTES" -le 0 ]; then
+            echo "ERROR: Downloaded media file is empty."
+            exit 1
+          fi
+
+          if [ "$SIZE_BYTES" -gt 2000000000 ]; then
+            echo "ERROR: File is larger than 2000MB Local Bot API limit."
+            exit 1
+          fi
+
+          echo "== Send as video without conversion =="
+          HTTP_CODE="$(curl -sS \
+            --connect-timeout 20 \
+            --max-time 7200 \
+            -o "$RUNNER_TEMP/send-video-response.json" \
+            -w "%{http_code}" \
+            -X POST "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/sendVideo" \
+            -F "chat_id=${TELEGRAM_CHAT_ID}" \
+            -F "supports_streaming=true" \
+            -F "video=@${MEDIA_FILE}")"
+
+          echo "HTTP_CODE=${HTTP_CODE}"
+
+          if ! echo "$HTTP_CODE" | grep -Eq '^2'; then
+            echo "ERROR: sendVideo failed."
+            echo "== Telegram response =="
+            cat "$RUNNER_TEMP/send-video-response.json" || true
+            exit 1
+          fi
+
+          if ! grep -q '"ok":true' "$RUNNER_TEMP/send-video-response.json"; then
+            echo "ERROR: Telegram returned non-ok response."
+            cat "$RUNNER_TEMP/send-video-response.json" || true
+            exit 1
+          fi
+
+          echo "OK: Raw file was sent through sendVideo without conversion."
