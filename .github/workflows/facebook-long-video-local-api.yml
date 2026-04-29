@@ -124,6 +124,35 @@ jobs:
               >/dev/null || true
           }
 
+          update_completed() {
+            sent_message_id="$1"
+
+            if [ -z "${PROGRESS_CHAT_ID:-}" ] || [ -z "${PROGRESS_MESSAGE_ID:-}" ]; then
+              return 0
+            fi
+
+            run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-}"
+
+            text="✅ <b>GitHub Facebook Long completed.</b>"
+            text="${text}"$'\n\n'"🌐 <b>Platform:</b> <code>Facebook</code>"
+            text="${text}"$'\n'"🧭 <b>Path:</b> <code>github-facebook-long</code>"
+
+            if [ -n "${sent_message_id:-}" ]; then
+              text="${text}"$'\n'"🆔 <b>Message ID:</b> <code>${sent_message_id}</code>"
+            fi
+
+            text="${text}"$'\n'"🔗 <a href=\"${run_url}\">Open Run</a>"
+
+            curl -sS \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText" \
+              -d "chat_id=${PROGRESS_CHAT_ID}" \
+              -d "message_id=${PROGRESS_MESSAGE_ID}" \
+              -d "parse_mode=HTML" \
+              -d "disable_web_page_preview=true" \
+              --data-urlencode "text=${text}" \
+              >/dev/null || true
+          }
+
           if [ -z "${TELEGRAM_TOKEN:-}" ]; then
             echo "ERROR: TELEGRAM_TOKEN secret is missing."
             exit 1
@@ -294,5 +323,7 @@ jobs:
             exit 1
           fi
 
-          update_progress 100 "Completed" "The video was sent by GitHub directly to Telegram."
+          TELEGRAM_SENT_MESSAGE_ID="$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1], encoding="utf-8")).get("result") or {}).get("message_id") or "")' "$RUNNER_TEMP/send-video-response.json" 2>/dev/null || true)"
+
+          update_completed "$TELEGRAM_SENT_MESSAGE_ID"
           echo "OK: Merged file was sent through sendVideo without re-encode."
