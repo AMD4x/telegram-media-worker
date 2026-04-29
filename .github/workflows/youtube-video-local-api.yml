@@ -1,0 +1,353 @@
+name: YouTube Video Local API
+run-name: "AMD4x YouTube Video ${{ inputs.dispatch_key }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      media_url:
+        description: "YouTube URL"
+        required: true
+        type: string
+      max_height:
+        description: "Maximum video height"
+        required: false
+        default: "auto"
+        type: string
+      send_as:
+        description: "Ignored compatibility input"
+        required: false
+        default: "video"
+        type: string
+      output_filename:
+        description: "Ignored compatibility input"
+        required: false
+        type: string
+      progress_chat_id:
+        description: "Telegram progress chat id"
+        required: false
+        type: string
+      progress_message_id:
+        description: "Telegram progress message id"
+        required: false
+        type: string
+      dispatch_key:
+        description: "Dispatch key"
+        required: false
+        default: "manual"
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  youtube_video_send:
+    name: Download YouTube video and send as video
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    container:
+      image: ghcr.io/ad4x/tg-video-worker:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Download YouTube video and send through Local Bot API
+        env:
+          MEDIA_URL: ${{ inputs.media_url }}
+          MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
+          SEND_AS_INPUT: ${{ inputs.send_as }}
+          OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
+          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
+          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
+          DISPATCH_KEY: ${{ inputs.dispatch_key }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
+        run: |
+          set -euo pipefail
+
+          echo "== YouTube Video Local API =="
+          echo "DISPATCH_KEY=${DISPATCH_KEY:-manual}"
+          echo "::add-mask::${MEDIA_URL}"
+
+          progress_bar() {
+            local percent="$1"
+            local filled=$((percent / 10))
+            local empty=$((10 - filled))
+            local bar=""
+
+            for _ in $(seq 1 "$filled"); do
+              bar="${bar}█"
+            done
+
+            for _ in $(seq 1 "$empty"); do
+              bar="${bar}░"
+            done
+
+            printf "%s" "$bar"
+          }
+
+          update_progress() {
+            percent="$1"
+            status_text="$2"
+            detail_text="$3"
+
+            if [ -z "${PROGRESS_CHAT_ID:-}" ] || [ -z "${PROGRESS_MESSAGE_ID:-}" ]; then
+              return 0
+            fi
+
+            bar="$(progress_bar "$percent")"
+            run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-}"
+
+            text="🐙 <b>GitHub Remote</b>"
+            text="${text}"$'\n\n'"📊 <code>[${bar}] ${percent}%</code>"
+            text="${text}"$'\n'"🧭 <b>Status:</b> ${status_text}"
+            text="${text}"$'\n'"ℹ️ <i>${detail_text}</i>"
+            text="${text}"$'\n'"🆔 <code>${GITHUB_RUN_ID:-unknown}</code>"
+            text="${text}"$'\n'"🔗 <a href=\"${run_url}\">Open Run</a>"
+
+            curl -sS \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText" \
+              -d "chat_id=${PROGRESS_CHAT_ID}" \
+              -d "message_id=${PROGRESS_MESSAGE_ID}" \
+              -d "parse_mode=HTML" \
+              -d "disable_web_page_preview=true" \
+              --data-urlencode "text=${text}" \
+              >/dev/null || true
+          }
+
+          update_completed() {
+            sent_message_id="$1"
+
+            if [ -z "${PROGRESS_CHAT_ID:-}" ] || [ -z "${PROGRESS_MESSAGE_ID:-}" ]; then
+              return 0
+            fi
+
+            run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-}"
+
+            text="✅ <b>GitHub YouTube completed.</b>"
+            text="${text}"$'\n\n'"🌐 <b>Platform:</b> <code>YouTube</code>"
+            text="${text}"$'\n'"🧭 <b>Path:</b> <code>github-youtube-video</code>"
+
+            if [ -n "${sent_message_id:-}" ]; then
+              text="${text}"$'\n'"🆔 <b>Message ID:</b> <code>${sent_message_id}</code>"
+            fi
+
+            text="${text}"$'\n'"🔗 <a href=\"${run_url}\">Open Run</a>"
+
+            curl -sS \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText" \
+              -d "chat_id=${PROGRESS_CHAT_ID}" \
+              -d "message_id=${PROGRESS_MESSAGE_ID}" \
+              -d "parse_mode=HTML" \
+              -d "disable_web_page_preview=true" \
+              --data-urlencode "text=${text}" \
+              >/dev/null || true
+          }
+
+          if [ -z "${TELEGRAM_TOKEN:-}" ]; then
+            echo "ERROR: TELEGRAM_TOKEN secret is missing."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "ERROR: TELEGRAM_CHAT_ID secret is missing."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_API_ID:-}" ]; then
+            echo "ERROR: TELEGRAM_API_ID secret is missing."
+            exit 1
+          fi
+
+          if [ -z "${TELEGRAM_API_HASH:-}" ]; then
+            echo "ERROR: TELEGRAM_API_HASH secret is missing."
+            exit 1
+          fi
+
+          echo "::add-mask::${TELEGRAM_TOKEN}"
+          echo "::add-mask::${TELEGRAM_CHAT_ID}"
+          echo "::add-mask::${TELEGRAM_API_ID}"
+          echo "::add-mask::${TELEGRAM_API_HASH}"
+
+          LOWER_MEDIA_URL="$(printf "%s" "$MEDIA_URL" | tr "[:upper:]" "[:lower:]")"
+
+          if ! echo "$LOWER_MEDIA_URL" | grep -Eq '(youtube\.com|youtu\.be|music\.youtube\.com)'; then
+            echo "ERROR: This workflow is only for YouTube URLs."
+            exit 1
+          fi
+
+          if ! command -v telegram-bot-api >/dev/null 2>&1; then
+            echo "ERROR: telegram-bot-api is missing from worker image."
+            exit 1
+          fi
+
+          if ! command -v yt-dlp >/dev/null 2>&1 && ! python3 -m yt_dlp --version >/dev/null 2>&1; then
+            echo "ERROR: yt-dlp is missing from worker image."
+            exit 1
+          fi
+
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            echo "ERROR: ffmpeg is missing from worker image."
+            exit 1
+          fi
+
+          update_progress 8 "Starting" "Preparing YouTube video workflow..."
+
+          mkdir -p work
+          mkdir -p "$RUNNER_TEMP/telegram-bot-api"
+
+          COOKIES_ARGS=()
+          if [ -n "${YOUTUBE_COOKIES_TXT:-}" ]; then
+            COOKIES_FILE="$RUNNER_TEMP/youtube-cookies.txt"
+            umask 077
+            printf '%s\n' "$YOUTUBE_COOKIES_TXT" > "$COOKIES_FILE"
+            sed -i 's/\r$//' "$COOKIES_FILE"
+            COOKIES_ARGS=(--cookies "$COOKIES_FILE")
+            echo "YOUTUBE_COOKIES=enabled"
+          else
+            echo "YOUTUBE_COOKIES=disabled"
+          fi
+
+          update_progress 12 "Starting Local API" "Starting Telegram Local Bot API..."
+          echo "== Start Local Bot API =="
+          telegram-bot-api \
+            --api-id="${TELEGRAM_API_ID}" \
+            --api-hash="${TELEGRAM_API_HASH}" \
+            --local \
+            --http-ip-address=127.0.0.1 \
+            --http-port=8081 \
+            --dir="$RUNNER_TEMP/telegram-bot-api" \
+            > "$RUNNER_TEMP/telegram-bot-api.log" 2>&1 &
+
+          TELEGRAM_BOT_API_PID="$!"
+
+          cleanup() {
+            kill "$TELEGRAM_BOT_API_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          echo "== Wait for Local Bot API =="
+          for i in $(seq 1 30); do
+            if curl -sS "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" \
+              | grep -q '"ok":true'; then
+              echo "LOCAL_BOT_API_READY=1"
+              update_progress 20 "Local API Ready" "Telegram Local Bot API is ready."
+              break
+            fi
+
+            if [ "$i" -eq 30 ]; then
+              echo "ERROR: Local Bot API did not become ready."
+              echo "== telegram-bot-api log tail =="
+              tail -n 80 "$RUNNER_TEMP/telegram-bot-api.log" || true
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          NORMALIZED_MAX_HEIGHT="$(printf '%s' "${MAX_HEIGHT_INPUT:-auto}" | tr '[:upper:]' '[:lower:]')"
+
+          if [ "$NORMALIZED_MAX_HEIGHT" != "auto" ] && ! echo "$NORMALIZED_MAX_HEIGHT" | grep -Eq '^[0-9]+$'; then
+            NORMALIZED_MAX_HEIGHT="auto"
+          fi
+
+          if [ "$NORMALIZED_MAX_HEIGHT" = "auto" ]; then
+            YOUTUBE_FORMAT_SELECTOR="bv*[ext=mp4][vcodec^=avc]+ba[ext=m4a]/bv*[ext=mp4][vcodec^=avc]+ba/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4][vcodec^=avc][acodec!=none]/b[ext=mp4]/best"
+          else
+            YOUTUBE_FORMAT_SELECTOR="bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4][vcodec^=avc]+ba[ext=m4a]/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4][vcodec^=avc]+ba/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]/b[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4][vcodec^=avc][acodec!=none]/b[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]/best[height<=${NORMALIZED_MAX_HEIGHT}]/best"
+          fi
+
+          echo "MAX_HEIGHT=${NORMALIZED_MAX_HEIGHT}"
+
+          update_progress 30 "Downloading" "Downloading best YouTube video and audio streams..."
+          echo "== Download YouTube video and audio, then merge without re-encode =="
+
+          python3 -m yt_dlp \
+            "${COOKIES_ARGS[@]}" \
+            --no-playlist \
+            --no-write-info-json \
+            --no-write-thumbnail \
+            --no-write-description \
+            --no-write-comments \
+            --no-cache-dir \
+            --no-part \
+            --restrict-filenames \
+            --extractor-args "youtube:player_client=android_vr,web" \
+            -S "res,fps,tbr,filesize" \
+            -f "$YOUTUBE_FORMAT_SELECTOR" \
+            --merge-output-format mp4 \
+            -o "work/youtube_video.%(ext)s" \
+            "$MEDIA_URL"
+
+          update_progress 70 "Muxing completed" "Video and audio were merged without re-encode."
+
+          MEDIA_FILE="$(find work -maxdepth 1 -type f -name 'youtube_video.mp4' | head -n 1)"
+
+          if [ -z "$MEDIA_FILE" ]; then
+            MEDIA_FILE="$(find work -maxdepth 1 -type f -name 'youtube_video.*' | sort | head -n 1)"
+          fi
+
+          if [ -z "$MEDIA_FILE" ] || [ ! -f "$MEDIA_FILE" ]; then
+            echo "ERROR: Downloaded media file was not found."
+            find work -maxdepth 1 -type f -printf '%p\n' || true
+            exit 1
+          fi
+
+          SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
+          EXTENSION="${MEDIA_FILE##*.}"
+
+          echo "DOWNLOADED_FILE=masked"
+          echo "EXTENSION=${EXTENSION}"
+          echo "SIZE_BYTES=${SIZE_BYTES}"
+
+          if [ "$SIZE_BYTES" -le 0 ]; then
+            echo "ERROR: Downloaded media file is empty."
+            exit 1
+          fi
+
+          if [ "$SIZE_BYTES" -gt 2000000000 ]; then
+            echo "ERROR: File is larger than 2000MB Local Bot API limit."
+            exit 1
+          fi
+
+          update_progress 82 "Uploading" "Uploading merged video to Telegram..."
+          echo "== Send YouTube video after muxing only =="
+
+          HTTP_CODE="$(curl -sS \
+            --connect-timeout 20 \
+            --max-time 7200 \
+            -o "$RUNNER_TEMP/send-video-response.json" \
+            -w "%{http_code}" \
+            -X POST "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/sendVideo" \
+            -F "chat_id=${TELEGRAM_CHAT_ID}" \
+            -F "supports_streaming=true" \
+            -F "video=@${MEDIA_FILE}")"
+
+          echo "HTTP_CODE=${HTTP_CODE}"
+
+          if ! echo "$HTTP_CODE" | grep -Eq '^2'; then
+            echo "ERROR: sendVideo failed."
+            echo "== Telegram response =="
+            cat "$RUNNER_TEMP/send-video-response.json" || true
+            exit 1
+          fi
+
+          if ! grep -q '"ok":true' "$RUNNER_TEMP/send-video-response.json"; then
+            echo "ERROR: Telegram returned non-ok response."
+            cat "$RUNNER_TEMP/send-video-response.json" || true
+            exit 1
+          fi
+
+          TELEGRAM_SENT_MESSAGE_ID="$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1], encoding="utf-8")).get("result") or {}).get("message_id") or "")' "$RUNNER_TEMP/send-video-response.json" 2>/dev/null || true)"
+
+          update_completed "$TELEGRAM_SENT_MESSAGE_ID"
+          echo "OK: YouTube video was sent through sendVideo without re-encode."
