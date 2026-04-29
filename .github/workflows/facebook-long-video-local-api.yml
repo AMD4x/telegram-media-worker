@@ -1,4 +1,5 @@
 name: Facebook Long Video Local API
+run-name: "AMD4x Facebook Long ${{ inputs.dispatch_key }}"
 
 on:
   workflow_dispatch:
@@ -7,6 +8,33 @@ on:
         description: "Media URL"
         required: true
         default: "https://www.facebook.com/share/v/14Unifahc5Z/"
+        type: string
+      max_height:
+        description: "Ignored compatibility input"
+        required: false
+        default: "auto"
+        type: string
+      send_as:
+        description: "Ignored compatibility input"
+        required: false
+        default: "video"
+        type: string
+      output_filename:
+        description: "Ignored compatibility input"
+        required: false
+        type: string
+      progress_chat_id:
+        description: "Telegram progress chat id"
+        required: false
+        type: string
+      progress_message_id:
+        description: "Telegram progress message id"
+        required: false
+        type: string
+      dispatch_key:
+        description: "Dispatch key"
+        required: false
+        default: "manual"
         type: string
 
 permissions:
@@ -33,6 +61,12 @@ jobs:
       - name: Download Facebook long video and send through Local Bot API
         env:
           MEDIA_URL: ${{ inputs.media_url }}
+          MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
+          SEND_AS_INPUT: ${{ inputs.send_as }}
+          OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
+          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
+          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
+          DISPATCH_KEY: ${{ inputs.dispatch_key }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
@@ -42,6 +76,7 @@ jobs:
           set -euo pipefail
 
           echo "== Facebook Long Video Local API Test =="
+          echo "DISPATCH_KEY=${DISPATCH_KEY:-manual}"
           echo "::add-mask::${MEDIA_URL}"
 
           if [ -z "${TELEGRAM_TOKEN:-}" ]; then
@@ -76,6 +111,11 @@ jobs:
 
           if ! command -v yt-dlp >/dev/null 2>&1 && ! python3 -m yt_dlp --version >/dev/null 2>&1; then
             echo "ERROR: yt-dlp is missing from worker image."
+            exit 1
+          fi
+
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            echo "ERROR: ffmpeg is missing from worker image."
             exit 1
           fi
 
