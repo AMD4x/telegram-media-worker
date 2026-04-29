@@ -261,9 +261,9 @@ jobs:
           fi
 
           if [ "$NORMALIZED_MAX_HEIGHT" = "auto" ]; then
-            YOUTUBE_FORMAT_SELECTOR="bv*[ext=mp4][vcodec^=avc]+ba[ext=m4a]/bv*[ext=mp4][vcodec^=avc]+ba/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4][vcodec^=avc][acodec!=none]/b[ext=mp4]/best"
+            YOUTUBE_FORMAT_SELECTOR="bv*+ba/bv*[ext=mp4]+ba[ext=m4a]/bv*[ext=mp4]+ba/b[ext=mp4][acodec!=none]/best"
           else
-            YOUTUBE_FORMAT_SELECTOR="bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4][vcodec^=avc]+ba[ext=m4a]/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4][vcodec^=avc]+ba/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]/b[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4][vcodec^=avc][acodec!=none]/b[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]/best[height<=${NORMALIZED_MAX_HEIGHT}]/best"
+            YOUTUBE_FORMAT_SELECTOR="bv*[height<=${NORMALIZED_MAX_HEIGHT}]+ba/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]+ba/b[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4][acodec!=none]/best[height<=${NORMALIZED_MAX_HEIGHT}]/best"
           fi
 
           echo "MAX_HEIGHT=${NORMALIZED_MAX_HEIGHT}"
@@ -282,7 +282,7 @@ jobs:
             --no-part \
             --restrict-filenames \
             --extractor-args "youtube:player_client=android_vr,web" \
-            -S "res,fps,tbr,filesize" \
+            -S "res,fps,tbr" \
             -f "$YOUTUBE_FORMAT_SELECTOR" \
             --merge-output-format mp4 \
             -o "work/youtube_video.%(ext)s" \
