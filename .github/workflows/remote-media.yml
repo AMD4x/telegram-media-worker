@@ -1784,27 +1784,36 @@ jobs:
             while [ "$attempt" -le "$max_attempts" ]; do
               rm -f "$response_file"
 
-              http_code="$(telegram_send_document_request_with_retry "$api_base" "$file_path" "$response_file" "video_document_fallback")"
+              http_code="$(telegram_send_document_request "$api_base" "$file_path" "$response_file")"
 
-              if [ "$http_code" != "429" ]; then
-                printf "%s" "$http_code"
-                return 0
-              fi
+              case "$http_code" in
+                429|000|408|500|502|503|504)
+                  ;;
+                *)
+                  printf "%s" "$http_code"
+                  return 0
+                  ;;
+              esac
 
               if [ "$attempt" -ge "$max_attempts" ]; then
                 printf "%s" "$http_code"
                 return 0
               fi
 
-              retry_after="$(telegram_retry_after_seconds "$response_file")"
+              if [ "$http_code" = "429" ]; then
+                retry_after="$(telegram_retry_after_seconds "$response_file")"
+              else
+                retry_after="20"
+              fi
 
-              echo "TELEGRAM_429_RETRY=1" >&2
-              echo "TELEGRAM_429_CONTEXT=${attempt_label}" >&2
-              echo "TELEGRAM_429_ATTEMPT=masked" >&2
+              echo "TELEGRAM_SEND_RETRY=1" >&2
+              echo "TELEGRAM_RETRY_CONTEXT=${attempt_label}" >&2
+              echo "TELEGRAM_RETRY_HTTP_CODE=${http_code}" >&2
+              echo "TELEGRAM_RETRY_ATTEMPT=masked" >&2
               echo "::add-mask::${retry_after}" >&2
-              echo "TELEGRAM_429_RETRY_AFTER_SECONDS=masked" >&2
+              echo "TELEGRAM_RETRY_AFTER_SECONDS=masked" >&2
 
-              progress_stage "telegram_rate_limited" "95" "Waiting" "Telegram_rate_limit_retry" >&2
+              progress_stage "telegram_send_retry" "95" "Waiting" "Telegram_send_retry" >&2
 
               sleep "$retry_after"
               attempt=$((attempt + 1))
@@ -1832,27 +1841,36 @@ jobs:
             while [ "$attempt" -le "$max_attempts" ]; do
               rm -f "$response_file"
 
-              http_code="$(telegram_send_video_request_with_retry "$api_base" "$file_path" "$response_file" "video")"
+              http_code="$(telegram_send_video_request "$api_base" "$file_path" "$response_file")"
 
-              if [ "$http_code" != "429" ]; then
-                printf "%s" "$http_code"
-                return 0
-              fi
+              case "$http_code" in
+                429|000|408|500|502|503|504)
+                  ;;
+                *)
+                  printf "%s" "$http_code"
+                  return 0
+                  ;;
+              esac
 
               if [ "$attempt" -ge "$max_attempts" ]; then
                 printf "%s" "$http_code"
                 return 0
               fi
 
-              retry_after="$(telegram_retry_after_seconds "$response_file")"
+              if [ "$http_code" = "429" ]; then
+                retry_after="$(telegram_retry_after_seconds "$response_file")"
+              else
+                retry_after="20"
+              fi
 
-              echo "TELEGRAM_429_RETRY=1" >&2
-              echo "TELEGRAM_429_CONTEXT=${attempt_label}" >&2
-              echo "TELEGRAM_429_ATTEMPT=masked" >&2
+              echo "TELEGRAM_SEND_RETRY=1" >&2
+              echo "TELEGRAM_RETRY_CONTEXT=${attempt_label}" >&2
+              echo "TELEGRAM_RETRY_HTTP_CODE=${http_code}" >&2
+              echo "TELEGRAM_RETRY_ATTEMPT=masked" >&2
               echo "::add-mask::${retry_after}" >&2
-              echo "TELEGRAM_429_RETRY_AFTER_SECONDS=masked" >&2
+              echo "TELEGRAM_RETRY_AFTER_SECONDS=masked" >&2
 
-              progress_stage "telegram_rate_limited" "95" "Waiting" "Telegram_rate_limit_retry" >&2
+              progress_stage "telegram_send_retry" "95" "Waiting" "Telegram_send_retry" >&2
 
               sleep "$retry_after"
               attempt=$((attempt + 1))
@@ -1991,7 +2009,7 @@ jobs:
 
             response_file="$RUNNER_TEMP/telegram-response.json"
 
-            http_code="$(telegram_send_video_request "$api_base" "$file_path" "$response_file")"
+            http_code="$(telegram_send_video_request_with_retry "$api_base" "$file_path" "$response_file" "video")"
 
             echo "TELEGRAM_HTTP_CODE=${http_code}"
 
@@ -2023,7 +2041,7 @@ jobs:
               progress_stage "sending_fallback" "95" "Sending" "Sending_as_document_fallback"
 
               response_file="$RUNNER_TEMP/telegram-document-response.json"
-              http_code="$(telegram_send_document_request "$api_base" "$file_path" "$response_file")"
+              http_code="$(telegram_send_document_request_with_retry "$api_base" "$file_path" "$response_file" "video_document_fallback")"
 
               echo "TELEGRAM_DOCUMENT_HTTP_CODE=${http_code}"
 
