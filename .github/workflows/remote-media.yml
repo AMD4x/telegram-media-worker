@@ -1366,6 +1366,25 @@ jobs:
             return 0
           }
 
+          media_has_audio_stream() {
+            local file_path="$1"
+
+            if [ ! -f "$file_path" ]; then
+              return 1
+            fi
+
+            local audio_count
+            audio_count="$(
+              ffprobe -v error \
+                -select_streams a \
+                -show_entries stream=index \
+                -of csv=p=0 \
+                "$file_path" 2>/dev/null | grep -c . || true
+            )"
+
+            [ "${audio_count:-0}" -gt 0 ]
+          }
+
           get_media_duration_seconds() {
             local file_path="$1"
 
@@ -1960,6 +1979,15 @@ jobs:
 
             echo "RENAMED_FILE=masked"
 
+            if [ "${SEND_AS:-video}" = "video" ] && [ "$PLATFORM" = "tiktok" ]; then
+              if ! media_has_audio_stream "$file_path"; then
+                echo "TIKTOK_NO_AUDIO_STREAM=1"
+                echo "TikTok downloaded candidate has no audio stream. Trying another format."
+                rm -f "$file_path"
+                return 1
+              fi
+            fi
+
             if [ "${SEND_AS:-video}" = "document" ]; then
               FINAL_SIZE_STATUS="OK"
               INPUT_VIDEO_CODEC_FINAL="Original"
@@ -2348,6 +2376,45 @@ jobs:
                   ;;
               esac
             }
+
+            if [ "$PLATFORM" = "tiktok" ]; then
+              echo "TIKTOK_AUDIO_SAFE_MODE=1"
+
+              if [ "$AUTO_MODE" = "1" ]; then
+                TIKTOK_ORDER_LIST="highest $HEIGHTS"
+              else
+                TIKTOK_ORDER_LIST="$HEIGHTS highest"
+              fi
+
+              TIKTOK_AUDIO_SELECTOR="$(build_generic_selector_from_order $TIKTOK_ORDER_LIST)"
+
+              set +e
+              try_download "tiktok-audio-safe" "audio" "$TIKTOK_AUDIO_SELECTOR"
+              TRY_RC=$?
+              set -e
+
+              if [ "$TRY_RC" -eq 90 ]; then
+                echo "DNS failure in TikTok audio safe attempt."
+              fi
+
+              set +e
+              try_sorted_download "tiktok-sorted-hasaud" "hasaud,res,fps,tbr"
+              TRY_RC=$?
+              set -e
+
+              if [ "$TRY_RC" -eq 90 ]; then
+                echo "DNS failure in TikTok sorted audio attempt."
+              fi
+
+              set +e
+              try_download "tiktok-best-audio-fallback" "best" "best[acodec!=none][vcodec!=none]/best[ext=mp4][acodec!=none][vcodec!=none]/bestvideo+bestaudio/best"
+              TRY_RC=$?
+              set -e
+
+              if [ "$TRY_RC" -eq 90 ]; then
+                echo "DNS failure in TikTok best audio fallback."
+              fi
+            fi
 
             if [ "$AUTO_MODE" = "1" ]; then
               echo "GENERIC_AUTO_ORDER=highest"
