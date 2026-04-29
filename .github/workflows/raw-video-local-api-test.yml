@@ -140,7 +140,8 @@ jobs:
             --no-cache-dir \
             --no-part \
             --restrict-filenames \
-            -f "best[vcodec!=none][acodec!=none]/best[vcodec!=none]/best" \
+            -S "res,fps,tbr,filesize" \
+            -f "best[protocol^=http][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]/best" \
             -o "work/raw_video.%(ext)s" \
             "$MEDIA_URL"
 
