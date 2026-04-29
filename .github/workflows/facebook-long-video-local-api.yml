@@ -70,7 +70,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           FACEBOOK_COOKIES_TXT: ${{ secrets.FACEBOOK_COOKIES_TXT }}
+        run: |
           set -euo pipefail
 
           echo "== Facebook Long Video Local API Test =="
@@ -95,35 +97,28 @@ jobs:
           }
 
           update_progress() {
-            local percent="$1"
-            local status="$2"
-            local detail="$3"
+            percent="$1"
+            status_text="$2"
+            detail_text="$3"
 
             if [ -z "${PROGRESS_CHAT_ID:-}" ] || [ -z "${PROGRESS_MESSAGE_ID:-}" ]; then
               return 0
             fi
 
-            local bar
             bar="$(progress_bar "$percent")"
-
-            local run_url
             run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-}"
 
-            local text
-            text="🐙 <b>Facebook Long GitHub</b>
-
-📊 <code>[${bar}] ${percent}%</code>
-🧭 <b>Status:</b> ${status}
-ℹ️ <i>${detail}</i>
-🆔 <code>${GITHUB_RUN_ID:-unknown}</code>
-🔗 <a href=\"${run_url}\">Open Run</a>"
+            text="Facebook Long GitHub"
+            text="${text}"$'\n\n'"[${bar}] ${percent}%"
+            text="${text}"$'\n'"Status: ${status_text}"
+            text="${text}"$'\n'"Info: ${detail_text}"
+            text="${text}"$'\n'"Run ID: ${GITHUB_RUN_ID:-unknown}"
+            text="${text}"$'\n'"Open Run: ${run_url}"
 
             curl -sS \
               -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText" \
               -d "chat_id=${PROGRESS_CHAT_ID}" \
               -d "message_id=${PROGRESS_MESSAGE_ID}" \
-              -d "parse_mode=HTML" \
-              -d "disable_web_page_preview=true" \
               --data-urlencode "text=${text}" \
               >/dev/null || true
           }
