@@ -268,36 +268,10 @@ jobs:
 
           echo "MAX_HEIGHT=${NORMALIZED_MAX_HEIGHT}"
 
-          update_progress 30 "Downloading" "Checking YouTube formats and downloading best video/audio streams..."
+          update_progress 30 "Downloading" "Downloading best YouTube video and audio streams..."
           echo "== Download YouTube video and audio, then merge without re-encode =="
-
-          echo "== Available YouTube formats with cookies / web =="
-          python3 -m yt_dlp \
-            "${COOKIES_ARGS[@]}" \
-            --no-playlist \
-            --no-cache-dir \
-            --extractor-args "youtube:player_client=web" \
-            --list-formats \
-            "$MEDIA_URL" || true
-
-          echo "== Available YouTube formats with cookies / web_safari =="
-          python3 -m yt_dlp \
-            "${COOKIES_ARGS[@]}" \
-            --no-playlist \
-            --no-cache-dir \
-            --extractor-args "youtube:player_client=web_safari" \
-            --list-formats \
-            "$MEDIA_URL" || true
-
-          echo "== Available YouTube formats without cookies / android_vr diagnostic only =="
-          python3 -m yt_dlp \
-            --no-playlist \
-            --no-cache-dir \
-            --extractor-args "youtube:player_client=android_vr" \
-            --list-formats \
-            "$MEDIA_URL" || true
-
           echo "== Download using cookies / web_safari, fallback to web =="
+
           python3 -m yt_dlp \
             "${COOKIES_ARGS[@]}" \
             --no-playlist \
