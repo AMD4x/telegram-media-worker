@@ -7,7 +7,6 @@ on:
       media_url:
         description: "Media URL"
         required: true
-        default: "https://www.facebook.com/share/v/14Unifahc5Z/"
         type: string
       max_height:
         description: "Ignored compatibility input"
