@@ -355,6 +355,41 @@ jobs:
             return 0
           }
 
+          transcode_to_telegram_video() {
+            local input_file="$1"
+            local output_file="$2"
+
+            if [ ! -f "$input_file" ]; then
+              return 1
+            fi
+
+            rm -f "$output_file"
+
+            if ! ffmpeg -hide_banner -loglevel error -y \
+              -i "$input_file" \
+              -map 0:v:0 -map 0:a:0 \
+              -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p" \
+              -c:v libx264 \
+              -preset veryfast \
+              -crf 23 \
+              -c:a aac \
+              -b:a 128k \
+              -ar 44100 \
+              -ac 2 \
+              -movflags +faststart \
+              "$output_file"; then
+              rm -f "$output_file"
+              return 1
+            fi
+
+            if [ ! -f "$output_file" ]; then
+              return 1
+            fi
+
+            printf "%s" "$output_file"
+            return 0
+          }
+
           download_tiktok_candidate() {
             local attempt_label="$1"
             local format_selector="$2"
@@ -416,7 +451,16 @@ jobs:
 
             if ! media_is_telegram_video_compatible "$CANDIDATE_FILE"; then
               echo "TIKTOK_UNSUPPORTED_CODEC=1"
-              rm -f "$CANDIDATE_FILE"
+
+              if [ -z "${TRANSCODE_SOURCE_FILE:-}" ]; then
+                TRANSCODE_SOURCE_FILE="work/tiktok_transcode_source_${attempt_label}.mp4"
+                rm -f "$TRANSCODE_SOURCE_FILE"
+                mv "$CANDIDATE_FILE" "$TRANSCODE_SOURCE_FILE"
+                echo "TIKTOK_TRANSCODE_CANDIDATE=1"
+              else
+                rm -f "$CANDIDATE_FILE"
+              fi
+
               return 1
             fi
 
@@ -500,7 +544,16 @@ jobs:
 
               if ! media_is_telegram_video_compatible "$output_file"; then
                 echo "TIKWM_UNSUPPORTED_CODEC=1"
-                rm -f "$output_file"
+
+                if [ -z "${TRANSCODE_SOURCE_FILE:-}" ]; then
+                  TRANSCODE_SOURCE_FILE="work/tiktok_transcode_source_${candidate_key}.mp4"
+                  rm -f "$TRANSCODE_SOURCE_FILE"
+                  mv "$output_file" "$TRANSCODE_SOURCE_FILE"
+                  echo "TIKWM_TRANSCODE_CANDIDATE=1"
+                else
+                  rm -f "$output_file"
+                fi
+
                 continue
               fi
 
@@ -514,6 +567,7 @@ jobs:
           }
 
           MEDIA_FILE=""
+          TRANSCODE_SOURCE_FILE=""
 
           echo "== Download TikTok video without re-encode =="
 
@@ -530,7 +584,20 @@ jobs:
           fi
 
           if [ -z "${MEDIA_FILE:-}" ] || [ ! -f "$MEDIA_FILE" ]; then
-            echo "ERROR: No TikTok candidate with audio was downloaded."
+            if [ -n "${TRANSCODE_SOURCE_FILE:-}" ] && [ -f "$TRANSCODE_SOURCE_FILE" ]; then
+              echo "TIKTOK_TRANSCODE_FALLBACK=1"
+              update_progress 58 "Converting" "Converting clean TikTok video for Telegram..."
+
+              TRANSCODED_FILE="$(transcode_to_telegram_video "$TRANSCODE_SOURCE_FILE" "work/tiktok_video_transcoded.mp4" || true)"
+
+              if [ -n "${TRANSCODED_FILE:-}" ] && [ -f "$TRANSCODED_FILE" ]; then
+                MEDIA_FILE="$TRANSCODED_FILE"
+              fi
+            fi
+          fi
+
+          if [ -z "${MEDIA_FILE:-}" ] || [ ! -f "$MEDIA_FILE" ]; then
+            echo "ERROR: No clean playable TikTok candidate was downloaded."
             exit 1
           fi
 
