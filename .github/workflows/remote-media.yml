@@ -2282,11 +2282,19 @@ jobs:
             generic_format_part_for_height() {
               local height="$1"
 
-              printf '%s' "bestvideo[ext=mp4][height<=${height}]+bestaudio[ext=m4a]/best[ext=mp4][height<=${height}]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]"
+              if [ "$PLATFORM" = "tiktok" ]; then
+                printf '%s' "best[ext=mp4][height<=${height}][vcodec!=none][acodec!=none]/best[height<=${height}][vcodec!=none][acodec!=none]/bestvideo[height<=${height}]+bestaudio/best[ext=mp4][height<=${height}]/best[height<=${height}]"
+              else
+                printf '%s' "bestvideo[ext=mp4][height<=${height}]+bestaudio[ext=m4a]/best[ext=mp4][height<=${height}]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]"
+              fi
             }
 
             generic_highest_format_part() {
-              printf '%s' "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/bestvideo+bestaudio/best"
+              if [ "$PLATFORM" = "tiktok" ]; then
+                printf '%s' "best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio/bestvideo+bestaudio/best[ext=mp4]/best"
+              else
+                printf '%s' "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/bestvideo+bestaudio/best"
+              fi
             }
 
             append_selector_part() {
