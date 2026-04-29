@@ -59,7 +59,6 @@ jobs:
     steps:
       - name: Download Facebook long video and send through Local Bot API
         env:
-          MEDIA_URL: ${{ inputs.media_url }}
           MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
           SEND_AS_INPUT: ${{ inputs.send_as }}
           OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
@@ -74,9 +73,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "== Facebook Long Video Local API Test =="
-          echo "DISPATCH_KEY=${DISPATCH_KEY:-manual}"
+          MEDIA_URL="$(python3 -c 'import json, os; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print((data.get("inputs") or {}).get("media_url", ""))')"
+
+          if [ -z "${MEDIA_URL:-}" ]; then
+            echo "ERROR: media_url input is missing."
+            exit 1
+          fi
+
           echo "::add-mask::${MEDIA_URL}"
+
+          echo "== Facebook Long Video Local API =="
 
           progress_bar() {
             local percent="$1"
@@ -205,9 +211,6 @@ jobs:
             printf '%s\n' "$FACEBOOK_COOKIES_TXT" > "$COOKIES_FILE"
             sed -i 's/\r$//' "$COOKIES_FILE"
             COOKIES_ARGS=(--cookies "$COOKIES_FILE")
-            echo "FACEBOOK_COOKIES=enabled"
-          else
-            echo "FACEBOOK_COOKIES=disabled"
           fi
 
           update_progress 12 "Starting Local API" "Starting Telegram Local Bot API..."
@@ -229,28 +232,41 @@ jobs:
           trap cleanup EXIT
 
           echo "== Wait for Local Bot API =="
-          for i in $(seq 1 30); do
-            if curl -sS "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" \
-              | grep -q '"ok":true'; then
-              echo "LOCAL_BOT_API_READY=1"
-              update_progress 20 "Local API Ready" "Telegram Local Bot API is ready."
-              break
+          BOT_API_READY=0
+
+          for i in $(seq 1 90); do
+            if ! kill -0 "$TELEGRAM_BOT_API_PID" >/dev/null 2>&1; then
+              echo "ERROR: Local Bot API process exited before becoming ready."
+              exit 1
             fi
 
-            if [ "$i" -eq 30 ]; then
-              echo "ERROR: Local Bot API did not become ready."
-              echo "== telegram-bot-api log tail =="
-              tail -n 80 "$RUNNER_TEMP/telegram-bot-api.log" || true
-              exit 1
+            GETME_RESPONSE="$(curl -sS --connect-timeout 2 --max-time 5 \
+              "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" 2>/dev/null || true)"
+
+            if echo "$GETME_RESPONSE" | grep -q '"ok":true'; then
+              echo "LOCAL_BOT_API_READY=1"
+              BOT_API_READY=1
+              update_progress 20 "Local API Ready" "Telegram Local Bot API is ready."
+              break
             fi
 
             sleep 1
           done
 
+          if [ "$BOT_API_READY" != "1" ]; then
+            echo "ERROR: Local Bot API did not become ready."
+            exit 1
+          fi
+
           update_progress 30 "Downloading" "Downloading best Facebook video and audio streams..."
           echo "== Download best video and audio, then merge without re-encode =="
-          python3 -m yt_dlp \
+          YTDLP_LOG="$RUNNER_TEMP/yt-dlp.log"
+
+          if ! python3 -m yt_dlp \
             "${COOKIES_ARGS[@]}" \
+            --quiet \
+            --no-warnings \
+            --no-progress \
             --no-playlist \
             --no-write-info-json \
             --no-write-thumbnail \
@@ -263,7 +279,10 @@ jobs:
             -f "bestvideo[vcodec!=none]+bestaudio[acodec!=none]/best[vcodec!=none][acodec!=none]/best" \
             --merge-output-format mp4 \
             -o "work/raw_video.%(ext)s" \
-            "$MEDIA_URL"
+            "$MEDIA_URL" > "$YTDLP_LOG" 2>&1; then
+            echo "ERROR: yt-dlp failed while processing the Facebook video."
+            exit 1
+          fi
 
           update_progress 70 "Muxing completed" "Video and audio were merged without re-encode."
 
@@ -275,16 +294,12 @@ jobs:
 
           if [ -z "$MEDIA_FILE" ] || [ ! -f "$MEDIA_FILE" ]; then
             echo "ERROR: Downloaded media file was not found."
-            find work -maxdepth 1 -type f -printf '%p\n' || true
             exit 1
           fi
 
           SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
-          EXTENSION="${MEDIA_FILE##*.}"
 
-          echo "DOWNLOADED_FILE=masked"
-          echo "EXTENSION=${EXTENSION}"
-          echo "SIZE_BYTES=${SIZE_BYTES}"
+          echo "MEDIA_FILE_READY=1"
 
           if [ "$SIZE_BYTES" -le 0 ]; then
             echo "ERROR: Downloaded media file is empty."
@@ -308,18 +323,15 @@ jobs:
             -F "supports_streaming=true" \
             -F "video=@${MEDIA_FILE}")"
 
-          echo "HTTP_CODE=${HTTP_CODE}"
+          echo "TELEGRAM_SEND_COMPLETED=1"
 
           if ! echo "$HTTP_CODE" | grep -Eq '^2'; then
             echo "ERROR: sendVideo failed."
-            echo "== Telegram response =="
-            cat "$RUNNER_TEMP/send-video-response.json" || true
             exit 1
           fi
 
           if ! grep -q '"ok":true' "$RUNNER_TEMP/send-video-response.json"; then
             echo "ERROR: Telegram returned non-ok response."
-            cat "$RUNNER_TEMP/send-video-response.json" || true
             exit 1
           fi
 
