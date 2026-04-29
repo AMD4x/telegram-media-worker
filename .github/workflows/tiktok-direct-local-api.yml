@@ -396,12 +396,104 @@ jobs:
             return 0
           }
 
+          download_tikwm_candidate() {
+            local api_json
+            local candidate_url
+            local output_file
+            local curl_log
+
+            api_json="$RUNNER_TEMP/tikwm-response.json"
+            output_file="work/tiktok_video_tikwm.mp4"
+            curl_log="$RUNNER_TEMP/tikwm-download.log"
+
+            rm -f "$api_json" "$output_file" "$curl_log"
+
+            echo "ATTEMPT=tikwm-direct"
+            update_progress 30 "Downloading" "Resolving TikTok direct video..."
+
+            if ! curl -sS -fL \
+              --connect-timeout 15 \
+              --max-time 60 \
+              --get \
+              --data-urlencode "url=${MEDIA_URL}" \
+              "https://www.tikwm.com/api/" \
+              -o "$api_json" >/dev/null 2>&1; then
+              echo "TIKWM_RESOLVE_FAILED=1"
+              return 1
+            fi
+
+            candidate_url="$(
+              sed -nE 's/.*"hdplay"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$api_json" | head -n 1
+            )"
+
+            if [ -z "${candidate_url:-}" ]; then
+              candidate_url="$(
+                sed -nE 's/.*"play"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$api_json" | head -n 1
+              )"
+            fi
+
+            if [ -z "${candidate_url:-}" ]; then
+              candidate_url="$(
+                sed -nE 's/.*"wmplay"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$api_json" | head -n 1
+              )"
+            fi
+
+            candidate_url="$(printf '%s' "${candidate_url:-}" | sed 's#\\/#/#g; s#\\u0026#\&#g')"
+
+            if [ -z "${candidate_url:-}" ]; then
+              echo "TIKWM_DIRECT_URL_MISSING=1"
+              return 1
+            fi
+
+            if ! printf '%s' "$candidate_url" | grep -Eq '^https?://'; then
+              echo "TIKWM_DIRECT_URL_INVALID=1"
+              return 1
+            fi
+
+            echo "::add-mask::${candidate_url}"
+
+            update_progress 40 "Downloading" "Downloading TikTok direct video..."
+
+            if ! curl -sS -fL \
+              --connect-timeout 20 \
+              --max-time 1800 \
+              --retry 2 \
+              --retry-delay 2 \
+              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+              --referer "https://www.tiktok.com/" \
+              -o "$output_file" \
+              "$candidate_url" > "$curl_log" 2>&1; then
+              echo "TIKWM_DOWNLOAD_FAILED=1"
+              rm -f "$output_file"
+              return 1
+            fi
+
+            if [ ! -f "$output_file" ]; then
+              echo "TIKWM_OUTPUT_MISSING=1"
+              return 1
+            fi
+
+            if ! media_has_audio_stream "$output_file"; then
+              echo "TIKWM_NO_AUDIO_STREAM=1"
+              rm -f "$output_file"
+              return 1
+            fi
+
+            MEDIA_FILE="$output_file"
+            echo "TIKWM_DOWNLOAD_SUCCESS=1"
+            return 0
+          }
+
           MEDIA_FILE=""
 
           echo "== Download TikTok video without re-encode =="
 
-          if ! download_tiktok_candidate "tiktok-audio-safe" "$TIKTOK_FORMAT_SELECTOR" ""; then
-            download_tiktok_candidate "tiktok-sorted-hasaud" "best[acodec!=none][vcodec!=none]/best[ext=mp4][acodec!=none][vcodec!=none]/bestvideo+bestaudio/best" "hasaud,res,fps,tbr" || true
+          download_tikwm_candidate || true
+
+          if [ -z "${MEDIA_FILE:-}" ] || [ ! -f "$MEDIA_FILE" ]; then
+            if ! download_tiktok_candidate "tiktok-audio-safe" "$TIKTOK_FORMAT_SELECTOR" ""; then
+              download_tiktok_candidate "tiktok-sorted-hasaud" "best[acodec!=none][vcodec!=none]/best[ext=mp4][acodec!=none][vcodec!=none]/bestvideo+bestaudio/best" "hasaud,res,fps,tbr" || true
+            fi
           fi
 
           if [ -z "${MEDIA_FILE:-}" ] || [ ! -f "$MEDIA_FILE" ]; then
