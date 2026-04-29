@@ -451,7 +451,7 @@ jobs:
               return 1
             fi
 
-            for candidate_key in play hdplay wmplay; do
+            for candidate_key in hdplay play; do
               candidate_url="$(
                 sed -nE 's/.*"'"$candidate_key"'"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$api_json" | head -n 1
               )"
@@ -509,7 +509,7 @@ jobs:
               return 0
             done
 
-            echo "TIKWM_NO_USABLE_CANDIDATE=1"
+            echo "TIKWM_NO_CLEAN_USABLE_CANDIDATE=1"
             return 1
           }
 
