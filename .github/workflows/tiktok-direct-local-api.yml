@@ -60,11 +60,6 @@ jobs:
       - name: Download TikTok video and send through Local Bot API
         env:
           MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
-          SEND_AS_INPUT: ${{ inputs.send_as }}
-          OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
-          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
-          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
-          DISPATCH_KEY: ${{ inputs.dispatch_key }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
@@ -80,6 +75,16 @@ jobs:
           fi
 
           echo "::add-mask::${MEDIA_URL}"
+          PROGRESS_CHAT_ID="$(python3 -c 'import json, os; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print((data.get("inputs") or {}).get("progress_chat_id", ""))')"
+          PROGRESS_MESSAGE_ID="$(python3 -c 'import json, os; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print((data.get("inputs") or {}).get("progress_message_id", ""))')"
+
+          if [ -n "${PROGRESS_CHAT_ID:-}" ]; then
+            echo "::add-mask::${PROGRESS_CHAT_ID}"
+          fi
+
+          if [ -n "${PROGRESS_MESSAGE_ID:-}" ]; then
+            echo "::add-mask::${PROGRESS_MESSAGE_ID}"
+          fi
 
           echo "== TikTok Direct Local API =="
 
