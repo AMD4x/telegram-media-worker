@@ -1,4 +1,4 @@
-name: Raw Video Local API Test
+name: Best Quality Mux Local API Test
 
 on:
   workflow_dispatch:
