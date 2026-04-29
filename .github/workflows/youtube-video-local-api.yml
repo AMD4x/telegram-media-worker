@@ -268,19 +268,28 @@ jobs:
 
           echo "MAX_HEIGHT=${NORMALIZED_MAX_HEIGHT}"
 
-          update_progress 30 "Downloading" "Downloading best YouTube video and audio streams..."
+          update_progress 30 "Downloading" "Checking YouTube formats and downloading best video/audio streams..."
           echo "== Download YouTube video and audio, then merge without re-encode =="
-          echo "== Available YouTube formats =="
+
+          echo "== Available YouTube formats without cookies / android_vr =="
+          python3 -m yt_dlp \
+            --no-playlist \
+            --no-cache-dir \
+            --extractor-args "youtube:player_client=android_vr" \
+            --list-formats \
+            "$MEDIA_URL" || true
+
+          echo "== Available YouTube formats with cookies / web =="
           python3 -m yt_dlp \
             "${COOKIES_ARGS[@]}" \
             --no-playlist \
             --no-cache-dir \
             --extractor-args "youtube:player_client=web" \
             --list-formats \
-            "$MEDIA_URL"
+            "$MEDIA_URL" || true
 
+          echo "== Download using android_vr without cookies =="
           python3 -m yt_dlp \
-            "${COOKIES_ARGS[@]}" \
             --no-playlist \
             --no-write-info-json \
             --no-write-thumbnail \
@@ -289,7 +298,7 @@ jobs:
             --no-cache-dir \
             --no-part \
             --restrict-filenames \
-            --extractor-args "youtube:player_client=android_vr,web" \
+            --extractor-args "youtube:player_client=android_vr" \
             -S "res,fps,tbr" \
             -f "$YOUTUBE_FORMAT_SELECTOR" \
             --merge-output-format mp4 \
