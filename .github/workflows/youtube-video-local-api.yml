@@ -270,6 +270,14 @@ jobs:
 
           update_progress 30 "Downloading" "Downloading best YouTube video and audio streams..."
           echo "== Download YouTube video and audio, then merge without re-encode =="
+          echo "== Available YouTube formats =="
+          python3 -m yt_dlp \
+            "${COOKIES_ARGS[@]}" \
+            --no-playlist \
+            --no-cache-dir \
+            --extractor-args "youtube:player_client=web" \
+            --list-formats \
+            "$MEDIA_URL"
 
           python3 -m yt_dlp \
             "${COOKIES_ARGS[@]}" \
