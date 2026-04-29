@@ -1624,8 +1624,15 @@ jobs:
             TELEGRAM_BOT_API_PID="$!"
             export TELEGRAM_BOT_API_PID
 
-            for i in $(seq 1 30); do
+            for i in $(seq 1 90); do
+              if ! kill -0 "$TELEGRAM_BOT_API_PID" >/dev/null 2>&1; then
+                echo "ERROR: Local Bot API process exited before becoming ready."
+                return 1
+              fi
+
               if curl -sS \
+                --connect-timeout 2 \
+                --max-time 5 \
                 -o "$response_file" \
                 "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" >/dev/null 2>&1; then
                 if grep -q '"ok":true' "$response_file"; then
@@ -1642,8 +1649,6 @@ jobs:
             done
 
             echo "ERROR: Local Bot API server did not become ready."
-            echo "Local Bot API log tail:"
-            tail -n 80 "$api_log" 2>/dev/null || true
             return 1
           }
 
