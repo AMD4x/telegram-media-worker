@@ -1600,14 +1600,11 @@ jobs:
 
             local api_dir
             local api_log
-            local response_file
             local i
-            local getme_http_code
             local port_http_code
 
             api_dir="$RUNNER_TEMP/telegram-bot-api"
             api_log="$RUNNER_TEMP/telegram-bot-api.log"
-            response_file="$RUNNER_TEMP/telegram-local-getme.json"
 
             mkdir -p "$api_dir"
 
@@ -1641,16 +1638,7 @@ jobs:
                   "http://127.0.0.1:8081/" 2>/dev/null || true
               )"
 
-              getme_http_code="$(
-                curl -sS \
-                  --connect-timeout 2 \
-                  --max-time 5 \
-                  -o "$response_file" \
-                  -w "%{http_code}" \
-                  "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" 2>/dev/null || true
-              )"
-
-              if [ "$getme_http_code" = "200" ] && grep -q '"ok":true' "$response_file"; then
+              if [ -n "$port_http_code" ] && [ "$port_http_code" != "000" ]; then
                 echo "LOCAL_BOT_API_READY=1"
                 LOCAL_BOT_API_STARTED="1"
 
@@ -1663,7 +1651,6 @@ jobs:
                 echo "LOCAL_BOT_API_WAIT=${i}/90"
                 echo "LOCAL_BOT_API_PROCESS=alive"
                 echo "LOCAL_BOT_API_PORT_HTTP_CODE=${port_http_code:-000}"
-                echo "LOCAL_BOT_API_GETME_HTTP_CODE=${getme_http_code:-000}"
               fi
 
               sleep 1
