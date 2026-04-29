@@ -70,7 +70,6 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           FACEBOOK_COOKIES_TXT: ${{ secrets.FACEBOOK_COOKIES_TXT }}
         run: |
           set -euo pipefail
@@ -108,17 +107,19 @@ jobs:
             bar="$(progress_bar "$percent")"
             run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-}"
 
-            text="Facebook Long GitHub"
-            text="${text}"$'\n\n'"[${bar}] ${percent}%"
-            text="${text}"$'\n'"Status: ${status_text}"
-            text="${text}"$'\n'"Info: ${detail_text}"
-            text="${text}"$'\n'"Run ID: ${GITHUB_RUN_ID:-unknown}"
-            text="${text}"$'\n'"Open Run: ${run_url}"
+            text="🐙 <b>GitHub Remote</b>"
+            text="${text}"$'\n\n'"📊 <code>[${bar}] ${percent}%</code>"
+            text="${text}"$'\n'"🧭 <b>Status:</b> ${status_text}"
+            text="${text}"$'\n'"ℹ️ <i>${detail_text}</i>"
+            text="${text}"$'\n'"🆔 <code>${GITHUB_RUN_ID:-unknown}</code>"
+            text="${text}"$'\n'"🔗 <a href=\"${run_url}\">Open Run</a>"
 
             curl -sS \
               -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText" \
               -d "chat_id=${PROGRESS_CHAT_ID}" \
               -d "message_id=${PROGRESS_MESSAGE_ID}" \
+              -d "parse_mode=HTML" \
+              -d "disable_web_page_preview=true" \
               --data-urlencode "text=${text}" \
               >/dev/null || true
           }
