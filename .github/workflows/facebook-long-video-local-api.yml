@@ -71,12 +71,62 @@ jobs:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           FACEBOOK_COOKIES_TXT: ${{ secrets.FACEBOOK_COOKIES_TXT }}
-        run: |
           set -euo pipefail
 
           echo "== Facebook Long Video Local API Test =="
           echo "DISPATCH_KEY=${DISPATCH_KEY:-manual}"
           echo "::add-mask::${MEDIA_URL}"
+
+          progress_bar() {
+            local percent="$1"
+            local filled=$((percent / 10))
+            local empty=$((10 - filled))
+            local bar=""
+
+            for _ in $(seq 1 "$filled"); do
+              bar="${bar}█"
+            done
+
+            for _ in $(seq 1 "$empty"); do
+              bar="${bar}░"
+            done
+
+            printf "%s" "$bar"
+          }
+
+          update_progress() {
+            local percent="$1"
+            local status="$2"
+            local detail="$3"
+
+            if [ -z "${PROGRESS_CHAT_ID:-}" ] || [ -z "${PROGRESS_MESSAGE_ID:-}" ]; then
+              return 0
+            fi
+
+            local bar
+            bar="$(progress_bar "$percent")"
+
+            local run_url
+            run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-}"
+
+            local text
+            text="🐙 <b>Facebook Long GitHub</b>
+
+📊 <code>[${bar}] ${percent}%</code>
+🧭 <b>Status:</b> ${status}
+ℹ️ <i>${detail}</i>
+🆔 <code>${GITHUB_RUN_ID:-unknown}</code>
+🔗 <a href=\"${run_url}\">Open Run</a>"
+
+            curl -sS \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText" \
+              -d "chat_id=${PROGRESS_CHAT_ID}" \
+              -d "message_id=${PROGRESS_MESSAGE_ID}" \
+              -d "parse_mode=HTML" \
+              -d "disable_web_page_preview=true" \
+              --data-urlencode "text=${text}" \
+              >/dev/null || true
+          }
 
           if [ -z "${TELEGRAM_TOKEN:-}" ]; then
             echo "ERROR: TELEGRAM_TOKEN secret is missing."
@@ -118,6 +168,8 @@ jobs:
             exit 1
           fi
 
+          update_progress 8 "Starting" "Preparing Facebook long-video workflow..."
+
           mkdir -p work
           mkdir -p "$RUNNER_TEMP/telegram-bot-api"
 
@@ -133,6 +185,7 @@ jobs:
             echo "FACEBOOK_COOKIES=disabled"
           fi
 
+          update_progress 12 "Starting Local API" "Starting Telegram Local Bot API..."
           echo "== Start Local Bot API =="
           telegram-bot-api \
             --api-id="${TELEGRAM_API_ID}" \
@@ -155,6 +208,7 @@ jobs:
             if curl -sS "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" \
               | grep -q '"ok":true'; then
               echo "LOCAL_BOT_API_READY=1"
+              update_progress 20 "Local API Ready" "Telegram Local Bot API is ready."
               break
             fi
 
@@ -168,6 +222,7 @@ jobs:
             sleep 1
           done
 
+          update_progress 30 "Downloading" "Downloading best Facebook video and audio streams..."
           echo "== Download best video and audio, then merge without re-encode =="
           python3 -m yt_dlp \
             "${COOKIES_ARGS[@]}" \
@@ -184,6 +239,8 @@ jobs:
             --merge-output-format mp4 \
             -o "work/raw_video.%(ext)s" \
             "$MEDIA_URL"
+
+          update_progress 70 "Muxing completed" "Video and audio were merged without re-encode."
 
           MEDIA_FILE="$(find work -maxdepth 1 -type f -name 'raw_video.mp4' | head -n 1)"
 
@@ -214,6 +271,7 @@ jobs:
             exit 1
           fi
 
+          update_progress 82 "Uploading" "Uploading merged video to Telegram..."
           echo "== Send as video after muxing only =="
           HTTP_CODE="$(curl -sS \
             --connect-timeout 20 \
@@ -240,4 +298,5 @@ jobs:
             exit 1
           fi
 
+          update_progress 100 "Completed" "The video was sent by GitHub directly to Telegram."
           echo "OK: Merged file was sent through sendVideo without re-encode."
