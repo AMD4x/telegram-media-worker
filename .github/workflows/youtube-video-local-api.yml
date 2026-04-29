@@ -59,7 +59,6 @@ jobs:
     steps:
       - name: Download YouTube video and send through Local Bot API
         env:
-          MEDIA_URL: ${{ inputs.media_url }}
           MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
           SEND_AS_INPUT: ${{ inputs.send_as }}
           OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
@@ -74,9 +73,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "== YouTube Video Local API =="
-          echo "DISPATCH_KEY=${DISPATCH_KEY:-manual}"
+          MEDIA_URL="$(python3 -c 'import json, os; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print((data.get("inputs") or {}).get("media_url", ""))')"
+
+          if [ -z "${MEDIA_URL:-}" ]; then
+            echo "ERROR: media_url input is missing."
+            exit 1
+          fi
+
           echo "::add-mask::${MEDIA_URL}"
+
+          echo "== YouTube Video Local API =="
 
           progress_bar() {
             local percent="$1"
@@ -212,9 +218,6 @@ jobs:
             printf '%s\n' "$YOUTUBE_COOKIES_TXT" > "$COOKIES_FILE"
             sed -i 's/\r$//' "$COOKIES_FILE"
             COOKIES_ARGS=(--cookies "$COOKIES_FILE")
-            echo "YOUTUBE_COOKIES=enabled"
-          else
-            echo "YOUTUBE_COOKIES=disabled"
           fi
 
           update_progress 12 "Starting Local API" "Starting Telegram Local Bot API..."
@@ -240,9 +243,7 @@ jobs:
 
           for i in $(seq 1 90); do
             if ! kill -0 "$TELEGRAM_BOT_API_PID" >/dev/null 2>&1; then
-              echo "ERROR: telegram-bot-api process exited before becoming ready."
-              echo "== telegram-bot-api log tail =="
-              tail -n 120 "$RUNNER_TEMP/telegram-bot-api.log" || true
+              echo "ERROR: Local Bot API process exited before becoming ready."
               exit 1
             fi
 
@@ -256,20 +257,11 @@ jobs:
               break
             fi
 
-            if [ "$i" = "1" ] || [ "$i" = "30" ] || [ "$i" = "60" ] || [ "$i" = "90" ]; then
-              echo "LOCAL_BOT_API_WAIT=${i}/90"
-              if [ -n "$GETME_RESPONSE" ]; then
-                echo "GETME_RESPONSE=${GETME_RESPONSE:0:300}"
-              fi
-            fi
-
             sleep 1
           done
 
           if [ "$BOT_API_READY" != "1" ]; then
             echo "ERROR: Local Bot API did not become ready."
-            echo "== telegram-bot-api log tail =="
-            tail -n 120 "$RUNNER_TEMP/telegram-bot-api.log" || true
             exit 1
           fi
 
@@ -284,8 +276,6 @@ jobs:
           else
             YOUTUBE_FORMAT_SELECTOR="bv*[height<=${NORMALIZED_MAX_HEIGHT}]+ba/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]+ba/b[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4][acodec!=none]/best[height<=${NORMALIZED_MAX_HEIGHT}]/best"
           fi
-
-          echo "MAX_HEIGHT=${NORMALIZED_MAX_HEIGHT}"
 
           update_progress 30 "Downloading" "Downloading best YouTube video and audio streams..."
           echo "== Download YouTube video and audio, then merge without re-encode =="
@@ -330,7 +320,6 @@ jobs:
           fi
 
           SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
-          EXTENSION="${MEDIA_FILE##*.}"
 
           echo "MEDIA_FILE_READY=1"
 
