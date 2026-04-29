@@ -1,4 +1,4 @@
-name: Best Quality Mux Local API Test
+name: Facebook Long Video Local API
 
 on:
   workflow_dispatch:
@@ -14,8 +14,8 @@ permissions:
   packages: read
 
 jobs:
-  raw_video_send:
-    name: Download raw and send as video
+  facebook_long_video_send:
+    name: Download Facebook long video and send as video
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -30,7 +30,7 @@ jobs:
         shell: bash
 
     steps:
-      - name: Download raw video and send through Local Bot API
+      - name: Download Facebook long video and send through Local Bot API
         env:
           MEDIA_URL: ${{ inputs.media_url }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "== Raw Video Local API Test =="
+          echo "== Facebook Long Video Local API Test =="
           echo "::add-mask::${MEDIA_URL}"
 
           if [ -z "${TELEGRAM_TOKEN:-}" ]; then
