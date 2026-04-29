@@ -271,14 +271,6 @@ jobs:
           update_progress 30 "Downloading" "Checking YouTube formats and downloading best video/audio streams..."
           echo "== Download YouTube video and audio, then merge without re-encode =="
 
-          echo "== Available YouTube formats without cookies / android_vr =="
-          python3 -m yt_dlp \
-            --no-playlist \
-            --no-cache-dir \
-            --extractor-args "youtube:player_client=android_vr" \
-            --list-formats \
-            "$MEDIA_URL" || true
-
           echo "== Available YouTube formats with cookies / web =="
           python3 -m yt_dlp \
             "${COOKIES_ARGS[@]}" \
@@ -288,8 +280,26 @@ jobs:
             --list-formats \
             "$MEDIA_URL" || true
 
-          echo "== Download using android_vr without cookies =="
+          echo "== Available YouTube formats with cookies / web_safari =="
           python3 -m yt_dlp \
+            "${COOKIES_ARGS[@]}" \
+            --no-playlist \
+            --no-cache-dir \
+            --extractor-args "youtube:player_client=web_safari" \
+            --list-formats \
+            "$MEDIA_URL" || true
+
+          echo "== Available YouTube formats without cookies / android_vr diagnostic only =="
+          python3 -m yt_dlp \
+            --no-playlist \
+            --no-cache-dir \
+            --extractor-args "youtube:player_client=android_vr" \
+            --list-formats \
+            "$MEDIA_URL" || true
+
+          echo "== Download using cookies / web_safari, fallback to web =="
+          python3 -m yt_dlp \
+            "${COOKIES_ARGS[@]}" \
             --no-playlist \
             --no-write-info-json \
             --no-write-thumbnail \
@@ -298,7 +308,7 @@ jobs:
             --no-cache-dir \
             --no-part \
             --restrict-filenames \
-            --extractor-args "youtube:player_client=android_vr" \
+            --extractor-args "youtube:player_client=web_safari,web" \
             -S "res,fps,tbr" \
             -f "$YOUTUBE_FORMAT_SELECTOR" \
             --merge-output-format mp4 \
