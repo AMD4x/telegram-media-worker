@@ -289,10 +289,14 @@ jobs:
 
           update_progress 30 "Downloading" "Downloading best YouTube video and audio streams..."
           echo "== Download YouTube video and audio, then merge without re-encode =="
-          echo "== Download using cookies / web_safari, fallback to web =="
+          echo "== Download using selected YouTube client =="
+          YTDLP_LOG="$RUNNER_TEMP/yt-dlp.log"
 
-          python3 -m yt_dlp \
+          if ! python3 -m yt_dlp \
             "${COOKIES_ARGS[@]}" \
+            --quiet \
+            --no-warnings \
+            --no-progress \
             --no-playlist \
             --no-write-info-json \
             --no-write-thumbnail \
@@ -306,7 +310,10 @@ jobs:
             -f "$YOUTUBE_FORMAT_SELECTOR" \
             --merge-output-format mp4 \
             -o "work/youtube_video.%(ext)s" \
-            "$MEDIA_URL"
+            "$MEDIA_URL" > "$YTDLP_LOG" 2>&1; then
+            echo "ERROR: yt-dlp failed while processing the YouTube video."
+            exit 1
+          fi
 
           update_progress 70 "Muxing completed" "Video and audio were merged without re-encode."
 
@@ -325,9 +332,7 @@ jobs:
           SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
           EXTENSION="${MEDIA_FILE##*.}"
 
-          echo "DOWNLOADED_FILE=masked"
-          echo "EXTENSION=${EXTENSION}"
-          echo "SIZE_BYTES=${SIZE_BYTES}"
+          echo "MEDIA_FILE_READY=1"
 
           if [ "$SIZE_BYTES" -le 0 ]; then
             echo "ERROR: Downloaded media file is empty."
@@ -352,18 +357,15 @@ jobs:
             -F "supports_streaming=true" \
             -F "video=@${MEDIA_FILE}")"
 
-          echo "HTTP_CODE=${HTTP_CODE}"
+          echo "TELEGRAM_SEND_COMPLETED=1"
 
           if ! echo "$HTTP_CODE" | grep -Eq '^2'; then
             echo "ERROR: sendVideo failed."
-            echo "== Telegram response =="
-            cat "$RUNNER_TEMP/send-video-response.json" || true
             exit 1
           fi
 
           if ! grep -q '"ok":true' "$RUNNER_TEMP/send-video-response.json"; then
             echo "ERROR: Telegram returned non-ok response."
-            cat "$RUNNER_TEMP/send-video-response.json" || true
             exit 1
           fi
 
