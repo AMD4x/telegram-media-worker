@@ -474,6 +474,7 @@ jobs:
             local candidate_url
             local output_file
             local curl_log
+            local transcoded_file
 
             api_json="$RUNNER_TEMP/tikwm-response.json"
             output_file="work/tiktok_video_tikwm.mp4"
@@ -542,24 +543,32 @@ jobs:
                 continue
               fi
 
-              if ! media_is_telegram_video_compatible "$output_file"; then
-                echo "TIKWM_UNSUPPORTED_CODEC=1"
-
-                if [ -z "${TRANSCODE_SOURCE_FILE:-}" ]; then
-                  TRANSCODE_SOURCE_FILE="work/tiktok_transcode_source_${candidate_key}.mp4"
-                  rm -f "$TRANSCODE_SOURCE_FILE"
-                  mv "$output_file" "$TRANSCODE_SOURCE_FILE"
-                  echo "TIKWM_TRANSCODE_CANDIDATE=1"
-                else
-                  rm -f "$output_file"
-                fi
-
-                continue
+              if media_is_telegram_video_compatible "$output_file"; then
+                MEDIA_FILE="$output_file"
+                echo "TIKWM_DOWNLOAD_SUCCESS=1"
+                return 0
               fi
 
-              MEDIA_FILE="$output_file"
-              echo "TIKWM_DOWNLOAD_SUCCESS=1"
-              return 0
+              echo "TIKWM_UNSUPPORTED_CODEC=1"
+              echo "TIKWM_TRANSCODE_IMMEDIATE=1"
+              update_progress 58 "Converting" "Converting clean TikTok video for Telegram..."
+
+              transcoded_file="$(transcode_to_telegram_video "$output_file" "work/tiktok_video_tikwm_transcoded.mp4" || true)"
+
+              if [ -n "${transcoded_file:-}" ] && [ -f "$transcoded_file" ]; then
+                if media_has_audio_stream "$transcoded_file" && media_is_telegram_video_compatible "$transcoded_file"; then
+                  MEDIA_FILE="$transcoded_file"
+                  rm -f "$output_file"
+                  echo "TIKWM_TRANSCODE_SUCCESS=1"
+                  return 0
+                fi
+
+                rm -f "$transcoded_file"
+              fi
+
+              echo "TIKWM_TRANSCODE_FAILED=1"
+              rm -f "$output_file"
+              continue
             done
 
             echo "TIKWM_NO_CLEAN_USABLE_CANDIDATE=1"
