@@ -271,10 +271,8 @@ jobs:
               -map_metadata -1 \
               -vf "scale=w='if(gte(dar,1),min(1920,trunc(ih*dar/2)*2),-2)':h='if(gte(dar,1),-2,min(1920,trunc(iw/dar/2)*2))':flags=bicubic,setsar=1,format=yuv420p" \
               -c:v libx264 \
-              -preset ultrafast \
-              -crf 24 \
-              -maxrate 6500k \
-              -bufsize 13000k \
+              -preset superfast \
+              -crf 23 \
               -profile:v main \
               -level 4.1 \
               -tag:v avc1 \
@@ -294,10 +292,6 @@ jobs:
               echo "ERROR: Safe transcode output is invalid." >&2
               return 1
             fi
-
-            printf "%s" "$output_file"
-            return 0
-          }
 
             printf "%s" "$output_file"
             return 0
@@ -424,16 +418,10 @@ jobs:
               exit 1
             fi
 
-            PORT_HTTP_CODE="$(
-              curl -sS \
-                --connect-timeout 1 \
-                --max-time 2 \
-                -o /dev/null \
-                -w "%{http_code}" \
-                "http://127.0.0.1:8081/" 2>/dev/null || true
-            )"
+            GETME_RESPONSE="$(curl -sS --connect-timeout 2 --max-time 5 \
+              "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" 2>/dev/null || true)"
 
-            if [ -n "${PORT_HTTP_CODE:-}" ] && [ "$PORT_HTTP_CODE" != "000" ]; then
+            if echo "$GETME_RESPONSE" | grep -q '"ok":true'; then
               echo "LOCAL_BOT_API_READY=1"
               BOT_API_READY=1
               update_progress 20 "Local API Ready" "Upload channel is ready."
