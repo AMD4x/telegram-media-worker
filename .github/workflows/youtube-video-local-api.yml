@@ -500,9 +500,6 @@ jobs:
           MEDIA_FILE="$PREPARED_FILE"
           SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
 
-          MEDIA_FILE="$PREPARED_FILE"
-          SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
-
           VIDEO_WIDTH="$(probe_stream_value "$MEDIA_FILE" "v:0" "width")"
           VIDEO_HEIGHT="$(probe_stream_value "$MEDIA_FILE" "v:0" "height")"
 
