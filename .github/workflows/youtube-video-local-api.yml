@@ -142,6 +142,7 @@ jobs:
             text="✅ <b>GitHub YouTube completed.</b>"
             text="${text}"$'\n\n'"🌐 <b>Platform:</b> <code>YouTube</code>"
             text="${text}"$'\n'"🧭 <b>Path:</b> <code>github-youtube-video</code>"
+            text="${text}"$'\n'"🎬 <b>Compatibility:</b> <code>iPhone-ready MP4</code>"
 
             if [ -n "${sent_message_id:-}" ]; then
               text="${text}"$'\n'"🆔 <b>Message ID:</b> <code>${sent_message_id}</code>"
@@ -157,6 +158,51 @@ jobs:
               -d "disable_web_page_preview=true" \
               --data-urlencode "text=${text}" \
               >/dev/null || true
+          }
+
+          prepare_telegram_iphone_video() {
+            local input_file="$1"
+            local output_file="$2"
+
+            if [ ! -f "$input_file" ]; then
+              echo "ERROR: Input media file is missing before final preparation."
+              return 1
+            fi
+
+            rm -f "$output_file"
+
+            if ! ffmpeg -hide_banner -loglevel error -y \
+              -i "$input_file" \
+              -map 0:v:0 -map 0:a:0? \
+              -map_metadata -1 \
+              -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1,format=yuv420p" \
+              -c:v libx264 \
+              -preset veryfast \
+              -crf 20 \
+              -c:a aac \
+              -b:a 160k \
+              -ar 44100 \
+              -ac 2 \
+              -movflags +faststart \
+              "$output_file"; then
+              rm -f "$output_file"
+              echo "ERROR: Failed to prepare iPhone-compatible MP4."
+              return 1
+            fi
+
+            if [ ! -f "$output_file" ]; then
+              echo "ERROR: Final prepared MP4 was not created."
+              return 1
+            fi
+
+            if [ "$(stat -c%s "$output_file")" -le 0 ]; then
+              rm -f "$output_file"
+              echo "ERROR: Final prepared MP4 is empty."
+              return 1
+            fi
+
+            printf "%s" "$output_file"
+            return 0
           }
 
           if [ -z "${TELEGRAM_TOKEN:-}" ]; then
@@ -206,7 +252,7 @@ jobs:
             exit 1
           fi
 
-          update_progress 8 "Starting" "Preparing YouTube video workflow..."
+          update_progress 8 "Starting" "Preparing secure media workflow..."
 
           mkdir -p work
           mkdir -p "$RUNNER_TEMP/telegram-bot-api"
@@ -220,7 +266,7 @@ jobs:
             COOKIES_ARGS=(--cookies "$COOKIES_FILE")
           fi
 
-          update_progress 12 "Starting Local API" "Starting Telegram Local Bot API..."
+          update_progress 12 "Starting Local API" "Preparing upload channel..."
           echo "== Start Local Bot API =="
           telegram-bot-api \
             --api-id="${TELEGRAM_API_ID}" \
@@ -253,7 +299,7 @@ jobs:
             if echo "$GETME_RESPONSE" | grep -q '"ok":true'; then
               echo "LOCAL_BOT_API_READY=1"
               BOT_API_READY=1
-              update_progress 20 "Local API Ready" "Telegram Local Bot API is ready."
+              update_progress 20 "Local API Ready" "Upload channel is ready."
               break
             fi
 
@@ -277,9 +323,8 @@ jobs:
             YOUTUBE_FORMAT_SELECTOR="bv*[height<=${NORMALIZED_MAX_HEIGHT}]+ba/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]+ba/b[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4][acodec!=none]/best[height<=${NORMALIZED_MAX_HEIGHT}]/best"
           fi
 
-          update_progress 30 "Downloading" "Downloading best YouTube video and audio streams..."
-          echo "== Download YouTube video and audio, then merge without re-encode =="
-          echo "== Download using selected YouTube client =="
+          update_progress 30 "Processing" "Preparing media safely..."
+          echo "== Processing media securely =="
           YTDLP_LOG="$RUNNER_TEMP/yt-dlp.log"
 
           if ! python3 -m yt_dlp \
@@ -301,11 +346,11 @@ jobs:
             --merge-output-format mp4 \
             -o "work/youtube_video.%(ext)s" \
             "$MEDIA_URL" > "$YTDLP_LOG" 2>&1; then
-            echo "ERROR: yt-dlp failed while processing the YouTube video."
+            echo "ERROR: Media processing failed."
             exit 1
           fi
 
-          update_progress 70 "Muxing completed" "Video and audio were merged without re-encode."
+          update_progress 70 "Preparing" "Preparing final media file..."
 
           MEDIA_FILE="$(find work -maxdepth 1 -type f -name 'youtube_video.mp4' | head -n 1)"
 
@@ -314,17 +359,27 @@ jobs:
           fi
 
           if [ -z "$MEDIA_FILE" ] || [ ! -f "$MEDIA_FILE" ]; then
-            echo "ERROR: Downloaded media file was not found."
-            find work -maxdepth 1 -type f -printf '%p\n' || true
+            echo "ERROR: Processed media file was not found."
             exit 1
           fi
 
+          update_progress 74 "Converting" "Preparing iPhone-compatible MP4..."
+
+          IPHONE_READY_FILE="$(prepare_telegram_iphone_video "$MEDIA_FILE" "work/youtube_telegram_iphone_ready.mp4" || true)"
+
+          if [ -z "${IPHONE_READY_FILE:-}" ] || [ ! -f "$IPHONE_READY_FILE" ]; then
+            echo "ERROR: Failed to create iPhone-compatible media file."
+            exit 1
+          fi
+
+          MEDIA_FILE="$IPHONE_READY_FILE"
           SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
 
           echo "MEDIA_FILE_READY=1"
+          echo "TELEGRAM_IPHONE_READY=1"
 
           if [ "$SIZE_BYTES" -le 0 ]; then
-            echo "ERROR: Downloaded media file is empty."
+            echo "ERROR: Final media file is empty."
             exit 1
           fi
 
@@ -333,8 +388,8 @@ jobs:
             exit 1
           fi
 
-          update_progress 82 "Uploading" "Uploading merged video to Telegram..."
-          echo "== Send YouTube video after muxing only =="
+          update_progress 82 "Uploading" "Uploading final media to Telegram..."
+          echo "== Send final media =="
 
           HTTP_CODE="$(curl -sS \
             --connect-timeout 20 \
@@ -361,4 +416,4 @@ jobs:
           TELEGRAM_SENT_MESSAGE_ID="$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1], encoding="utf-8")).get("result") or {}).get("message_id") or "")' "$RUNNER_TEMP/send-video-response.json" 2>/dev/null || true)"
 
           update_completed "$TELEGRAM_SENT_MESSAGE_ID"
-          echo "OK: YouTube video was sent through sendVideo without re-encode."
+          echo "OK: Final media was sent successfully."
