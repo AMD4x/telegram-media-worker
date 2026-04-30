@@ -81,7 +81,19 @@ jobs:
           fi
 
           echo "::add-mask::${MEDIA_URL}"
+          
+          if [ -n "${PROGRESS_CHAT_ID:-}" ]; then
+            echo "::add-mask::${PROGRESS_CHAT_ID}"
+          fi
 
+          if [ -n "${PROGRESS_MESSAGE_ID:-}" ]; then
+            echo "::add-mask::${PROGRESS_MESSAGE_ID}"
+          fi
+
+          if [ -n "${DISPATCH_KEY:-}" ]; then
+            echo "::add-mask::${DISPATCH_KEY}"
+          fi
+          
           echo "== Facebook Long Video Local API =="
 
           progress_bar() {
