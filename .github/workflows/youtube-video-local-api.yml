@@ -90,11 +90,11 @@ jobs:
             local empty=$((10 - filled))
             local bar=""
 
-            for _ in $(seq 1 "$filled"); do
+            for _ in $(seq 1 "$filled" 2>/dev/null); do
               bar="${bar}█"
             done
 
-            for _ in $(seq 1 "$empty"); do
+            for _ in $(seq 1 "$empty" 2>/dev/null); do
               bar="${bar}░"
             done
 
@@ -142,7 +142,7 @@ jobs:
             text="✅ <b>GitHub YouTube completed.</b>"
             text="${text}"$'\n\n'"🌐 <b>Platform:</b> <code>YouTube</code>"
             text="${text}"$'\n'"🧭 <b>Path:</b> <code>github-youtube-video</code>"
-            text="${text}"$'\n'"🎬 <b>Compatibility:</b> <code>iPhone-ready MP4</code>"
+            text="${text}"$'\n'"🎬 <b>Compatibility:</b> <code>Telegram/iPhone ready</code>"
 
             if [ -n "${sent_message_id:-}" ]; then
               text="${text}"$'\n'"🆔 <b>Message ID:</b> <code>${sent_message_id}</code>"
@@ -160,49 +160,168 @@ jobs:
               >/dev/null || true
           }
 
-          prepare_telegram_iphone_video() {
-            local input_file="$1"
-            local output_file="$2"
+          probe_stream_value() {
+            local file_path="$1"
+            local stream_selector="$2"
+            local entry_name="$3"
 
-            if [ ! -f "$input_file" ]; then
-              echo "ERROR: Input media file is missing before final preparation."
+            ffprobe -v error \
+              -select_streams "$stream_selector" \
+              -show_entries "stream=${entry_name}" \
+              -of default=noprint_wrappers=1:nokey=1 \
+              "$file_path" 2>/dev/null | head -n 1 || true
+          }
+
+          is_fast_copy_safe_for_iphone() {
+            local file_path="$1"
+
+            if [ ! -f "$file_path" ]; then
               return 1
             fi
 
-            rm -f "$output_file"
+            local video_codec
+            local audio_codec
+            local pix_fmt
+            local width
+            local height
+            local sar
+            local level
+
+            video_codec="$(probe_stream_value "$file_path" "v:0" "codec_name")"
+            audio_codec="$(probe_stream_value "$file_path" "a:0" "codec_name")"
+            pix_fmt="$(probe_stream_value "$file_path" "v:0" "pix_fmt")"
+            width="$(probe_stream_value "$file_path" "v:0" "width")"
+            height="$(probe_stream_value "$file_path" "v:0" "height")"
+            sar="$(probe_stream_value "$file_path" "v:0" "sample_aspect_ratio")"
+            level="$(probe_stream_value "$file_path" "v:0" "level")"
+
+            [ "$video_codec" = "h264" ] || return 1
+            [ -z "$audio_codec" ] || [ "$audio_codec" = "aac" ] || return 1
+            [ "$pix_fmt" = "yuv420p" ] || return 1
+
+            if [ -n "$sar" ] && [ "$sar" != "1:1" ] && [ "$sar" != "0:1" ]; then
+              return 1
+            fi
+
+            if echo "$width" | grep -Eq '^[0-9]+$' && [ "$width" -gt 1920 ]; then
+              return 1
+            fi
+
+            if echo "$height" | grep -Eq '^[0-9]+$' && [ "$height" -gt 1920 ]; then
+              return 1
+            fi
+
+            if echo "$level" | grep -Eq '^[0-9]+$' && [ "$level" -gt 42 ]; then
+              return 1
+            fi
+
+            return 0
+          }
+
+          remux_fast_for_telegram() {
+            local input_file="$1"
+            local output_file="$2"
+            local log_file="$RUNNER_TEMP/ffmpeg-remux.log"
+
+            if [ ! -f "$input_file" ]; then
+              echo "ERROR: Input media file is missing before remux." >&2
+              return 1
+            fi
+
+            rm -f "$output_file" "$log_file"
 
             if ! ffmpeg -hide_banner -loglevel error -y \
               -i "$input_file" \
               -map 0:v:0 -map 0:a:0? \
               -map_metadata -1 \
-              -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1,format=yuv420p" \
-              -c:v libx264 \
-              -preset veryfast \
-              -crf 20 \
-              -c:a aac \
-              -b:a 160k \
-              -ar 44100 \
-              -ac 2 \
+              -c copy \
+              -tag:v avc1 \
               -movflags +faststart \
-              "$output_file"; then
+              "$output_file" > "$log_file" 2>&1; then
               rm -f "$output_file"
-              echo "ERROR: Failed to prepare iPhone-compatible MP4."
+              echo "ERROR: Fast remux failed." >&2
               return 1
             fi
 
-            if [ ! -f "$output_file" ]; then
-              echo "ERROR: Final prepared MP4 was not created."
-              return 1
-            fi
-
-            if [ "$(stat -c%s "$output_file")" -le 0 ]; then
+            if [ ! -f "$output_file" ] || [ "$(stat -c%s "$output_file")" -le 0 ]; then
               rm -f "$output_file"
-              echo "ERROR: Final prepared MP4 is empty."
+              echo "ERROR: Fast remux output is invalid." >&2
               return 1
             fi
 
             printf "%s" "$output_file"
             return 0
+          }
+
+          transcode_safe_for_iphone() {
+            local input_file="$1"
+            local output_file="$2"
+            local log_file="$RUNNER_TEMP/ffmpeg-transcode.log"
+
+            if [ ! -f "$input_file" ]; then
+              echo "ERROR: Input media file is missing before transcode." >&2
+              return 1
+            fi
+
+            rm -f "$output_file" "$log_file"
+
+            if ! ffmpeg -hide_banner -loglevel error -y \
+              -i "$input_file" \
+              -map 0:v:0 -map 0:a:0? \
+              -map_metadata -1 \
+              -vf "scale=w='if(gt(iw,ih),min(1920,iw),-2)':h='if(gt(iw,ih),-2,min(1920,ih))':flags=bicubic,setsar=1,format=yuv420p" \
+              -c:v libx264 \
+              -preset superfast \
+              -crf 23 \
+              -profile:v main \
+              -level 4.1 \
+              -tag:v avc1 \
+              -c:a aac \
+              -b:a 128k \
+              -ar 44100 \
+              -ac 2 \
+              -movflags +faststart \
+              "$output_file" > "$log_file" 2>&1; then
+              rm -f "$output_file"
+              echo "ERROR: Safe transcode failed." >&2
+              return 1
+            fi
+
+            if [ ! -f "$output_file" ] || [ "$(stat -c%s "$output_file")" -le 0 ]; then
+              rm -f "$output_file"
+              echo "ERROR: Safe transcode output is invalid." >&2
+              return 1
+            fi
+
+            printf "%s" "$output_file"
+            return 0
+          }
+
+          prepare_final_video_fast() {
+            local input_file="$1"
+            local remux_file="$2"
+            local transcode_file="$3"
+            local prepared_file=""
+
+            if is_fast_copy_safe_for_iphone "$input_file"; then
+              prepared_file="$(remux_fast_for_telegram "$input_file" "$remux_file" || true)"
+
+              if [ -n "${prepared_file:-}" ] && [ -f "$prepared_file" ] && is_fast_copy_safe_for_iphone "$prepared_file"; then
+                echo "FINAL_PREP_MODE=fast_remux"
+                printf "%s" "$prepared_file"
+                return 0
+              fi
+            fi
+
+            prepared_file="$(transcode_safe_for_iphone "$input_file" "$transcode_file" || true)"
+
+            if [ -n "${prepared_file:-}" ] && [ -f "$prepared_file" ]; then
+              echo "FINAL_PREP_MODE=safe_transcode"
+              printf "%s" "$prepared_file"
+              return 0
+            fi
+
+            return 1
           }
 
           if [ -z "${TELEGRAM_TOKEN:-}" ]; then
@@ -252,6 +371,11 @@ jobs:
             exit 1
           fi
 
+          if ! command -v ffprobe >/dev/null 2>&1; then
+            echo "ERROR: ffprobe is missing from worker image."
+            exit 1
+          fi
+
           update_progress 8 "Starting" "Preparing secure media workflow..."
 
           mkdir -p work
@@ -268,6 +392,7 @@ jobs:
 
           update_progress 12 "Starting Local API" "Preparing upload channel..."
           echo "== Start Local Bot API =="
+
           telegram-bot-api \
             --api-id="${TELEGRAM_API_ID}" \
             --api-hash="${TELEGRAM_API_HASH}" \
@@ -318,13 +443,14 @@ jobs:
           fi
 
           if [ "$NORMALIZED_MAX_HEIGHT" = "auto" ]; then
-            YOUTUBE_FORMAT_SELECTOR="bv*+ba/bv*[ext=mp4]+ba[ext=m4a]/bv*[ext=mp4]+ba/b[ext=mp4][acodec!=none]/best"
+            YOUTUBE_FORMAT_SELECTOR="bv*[ext=mp4][vcodec^=avc1][height<=1080]+ba[ext=m4a]/b[ext=mp4][vcodec^=avc1][acodec^=mp4a][height<=1080]/bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080][acodec!=none]/bv*+ba/best"
           else
-            YOUTUBE_FORMAT_SELECTOR="bv*[height<=${NORMALIZED_MAX_HEIGHT}]+ba/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]/bv*[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4]+ba/b[height<=${NORMALIZED_MAX_HEIGHT}][ext=mp4][acodec!=none]/best[height<=${NORMALIZED_MAX_HEIGHT}]/best"
+            YOUTUBE_FORMAT_SELECTOR="bv*[ext=mp4][vcodec^=avc1][height<=${NORMALIZED_MAX_HEIGHT}]+ba[ext=m4a]/b[ext=mp4][vcodec^=avc1][acodec^=mp4a][height<=${NORMALIZED_MAX_HEIGHT}]/bv*[ext=mp4][height<=${NORMALIZED_MAX_HEIGHT}]+ba[ext=m4a]/b[ext=mp4][height<=${NORMALIZED_MAX_HEIGHT}][acodec!=none]/bv*[height<=${NORMALIZED_MAX_HEIGHT}]+ba/best[height<=${NORMALIZED_MAX_HEIGHT}]/best"
           fi
 
           update_progress 30 "Processing" "Preparing media safely..."
           echo "== Processing media securely =="
+
           YTDLP_LOG="$RUNNER_TEMP/yt-dlp.log"
 
           if ! python3 -m yt_dlp \
@@ -341,7 +467,6 @@ jobs:
             --no-part \
             --restrict-filenames \
             --extractor-args "youtube:player_client=web_safari,web" \
-            -S "res,fps,tbr" \
             -f "$YOUTUBE_FORMAT_SELECTOR" \
             --merge-output-format mp4 \
             -o "work/youtube_video.%(ext)s" \
@@ -350,7 +475,7 @@ jobs:
             exit 1
           fi
 
-          update_progress 70 "Preparing" "Preparing final media file..."
+          update_progress 68 "Preparing" "Checking final media compatibility..."
 
           MEDIA_FILE="$(find work -maxdepth 1 -type f -name 'youtube_video.mp4' | head -n 1)"
 
@@ -363,16 +488,16 @@ jobs:
             exit 1
           fi
 
-          update_progress 74 "Converting" "Preparing iPhone-compatible MP4..."
+          update_progress 74 "Preparing" "Optimizing media for Telegram/iPhone..."
 
-          IPHONE_READY_FILE="$(prepare_telegram_iphone_video "$MEDIA_FILE" "work/youtube_telegram_iphone_ready.mp4" || true)"
+          PREPARED_FILE="$(prepare_final_video_fast "$MEDIA_FILE" "work/youtube_telegram_fast.mp4" "work/youtube_telegram_safe.mp4" | tail -n 1 || true)"
 
-          if [ -z "${IPHONE_READY_FILE:-}" ] || [ ! -f "$IPHONE_READY_FILE" ]; then
-            echo "ERROR: Failed to create iPhone-compatible media file."
+          if [ -z "${PREPARED_FILE:-}" ] || [ ! -f "$PREPARED_FILE" ]; then
+            echo "ERROR: Failed to prepare Telegram/iPhone-compatible media file."
             exit 1
           fi
 
-          MEDIA_FILE="$IPHONE_READY_FILE"
+          MEDIA_FILE="$PREPARED_FILE"
           SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
 
           echo "MEDIA_FILE_READY=1"
