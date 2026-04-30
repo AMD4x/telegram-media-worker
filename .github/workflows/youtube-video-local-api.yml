@@ -269,7 +269,7 @@ jobs:
               -i "$input_file" \
               -map 0:v:0 -map 0:a:0? \
               -map_metadata -1 \
-              -vf "scale=w='if(gt(iw,ih),min(1920,iw),-2)':h='if(gt(iw,ih),-2,min(1920,ih))':flags=bicubic,setsar=1,format=yuv420p" \
+              -vf "scale=w='if(gte(dar,1),min(1920,trunc(ih*dar/2)*2),-2)':h='if(gte(dar,1),-2,min(1920,trunc(iw/dar/2)*2))':flags=bicubic,setsar=1,format=yuv420p" \
               -c:v libx264 \
               -preset superfast \
               -crf 23 \
