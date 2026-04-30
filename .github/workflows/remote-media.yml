@@ -1328,7 +1328,7 @@ jobs:
             ffmpeg -hide_banner -loglevel error -y \
               -i "$input_file" \
               -map 0:v:0 -map 0:a:0? \
-              -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p" \
+              -vf "scale=w='if(gte(dar,1),min(1920,trunc(ih*dar/2)*2),-2)':h='if(gte(dar,1),-2,min(1920,trunc(iw/dar/2)*2))':flags=bicubic,setsar=1,format=yuv420p" \
               -c:v libx264 \
               -preset veryfast \
               -crf 23 \
@@ -1717,15 +1717,46 @@ jobs:
             local file_path="$2"
             local response_file="$3"
 
+            local video_width
+            local video_height
+            local form_args
+
+            video_width="$(
+              ffprobe -v error \
+                -select_streams v:0 \
+                -show_entries stream=width \
+                -of default=noprint_wrappers=1:nokey=1 \
+                "$file_path" 2>/dev/null | head -n 1 || true
+            )"
+
+            video_height="$(
+              ffprobe -v error \
+                -select_streams v:0 \
+                -show_entries stream=height \
+                -of default=noprint_wrappers=1:nokey=1 \
+                "$file_path" 2>/dev/null | head -n 1 || true
+            )"
+
+            form_args=(
+              -F "chat_id=${TELEGRAM_CHAT_ID}"
+              -F "supports_streaming=true"
+              -F "video=@${file_path}"
+            )
+
+            if echo "${video_width:-}" | grep -Eq '^[0-9]+$' && echo "${video_height:-}" | grep -Eq '^[0-9]+$'; then
+              form_args+=(
+                -F "width=${video_width}"
+                -F "height=${video_height}"
+              )
+            fi
+
             curl -sS \
               --connect-timeout 20 \
               --max-time 1800 \
               -o "$response_file" \
               -w "%{http_code}" \
               -X POST "${api_base}/sendVideo" \
-              -F "chat_id=${TELEGRAM_CHAT_ID}" \
-              -F "supports_streaming=true" \
-              -F "video=@${file_path}"
+              "${form_args[@]}"
           }
 
           telegram_send_document_request() {
