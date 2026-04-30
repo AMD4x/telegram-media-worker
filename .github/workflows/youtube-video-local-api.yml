@@ -500,8 +500,23 @@ jobs:
           MEDIA_FILE="$PREPARED_FILE"
           SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
 
+          MEDIA_FILE="$PREPARED_FILE"
+          SIZE_BYTES="$(stat -c%s "$MEDIA_FILE")"
+
+          VIDEO_WIDTH="$(probe_stream_value "$MEDIA_FILE" "v:0" "width")"
+          VIDEO_HEIGHT="$(probe_stream_value "$MEDIA_FILE" "v:0" "height")"
+
+          if ! echo "${VIDEO_WIDTH:-}" | grep -Eq '^[0-9]+$'; then
+            VIDEO_WIDTH=""
+          fi
+
+          if ! echo "${VIDEO_HEIGHT:-}" | grep -Eq '^[0-9]+$'; then
+            VIDEO_HEIGHT=""
+          fi
+
           echo "MEDIA_FILE_READY=1"
           echo "TELEGRAM_IPHONE_READY=1"
+          echo "VIDEO_DIMENSIONS_READY=1"
 
           if [ "$SIZE_BYTES" -le 0 ]; then
             echo "ERROR: Final media file is empty."
