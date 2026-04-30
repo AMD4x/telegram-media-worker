@@ -82,6 +82,18 @@ jobs:
 
           echo "::add-mask::${MEDIA_URL}"
 
+          if [ -n "${PROGRESS_CHAT_ID:-}" ]; then
+            echo "::add-mask::${PROGRESS_CHAT_ID}"
+          fi
+
+          if [ -n "${PROGRESS_MESSAGE_ID:-}" ]; then
+            echo "::add-mask::${PROGRESS_MESSAGE_ID}"
+          fi
+
+          if [ -n "${DISPATCH_KEY:-}" ]; then
+            echo "::add-mask::${DISPATCH_KEY}"
+          fi
+
           echo "== YouTube Video Local API =="
 
           progress_bar() {
@@ -271,8 +283,8 @@ jobs:
               -map_metadata -1 \
               -vf "scale=w='if(gte(dar,1),min(1920,trunc(ih*dar/2)*2),-2)':h='if(gte(dar,1),-2,min(1920,trunc(iw/dar/2)*2))':flags=bicubic,setsar=1,format=yuv420p" \
               -c:v libx264 \
-              -preset superfast \
-              -crf 23 \
+              -preset ultrafast \
+              -crf 24 \
               -profile:v main \
               -level 4.1 \
               -tag:v avc1 \
@@ -418,10 +430,16 @@ jobs:
               exit 1
             fi
 
-            GETME_RESPONSE="$(curl -sS --connect-timeout 2 --max-time 5 \
-              "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" 2>/dev/null || true)"
+            PORT_HTTP_CODE="$(
+              curl -sS \
+                --connect-timeout 1 \
+                --max-time 2 \
+                -o /dev/null \
+                -w "%{http_code}" \
+                "http://127.0.0.1:8081/" 2>/dev/null || true
+            )"
 
-            if echo "$GETME_RESPONSE" | grep -q '"ok":true'; then
+            if [ -n "${PORT_HTTP_CODE:-}" ] && [ "$PORT_HTTP_CODE" != "000" ]; then
               echo "LOCAL_BOT_API_READY=1"
               BOT_API_READY=1
               update_progress 20 "Local API Ready" "Upload channel is ready."
@@ -549,17 +567,22 @@ jobs:
             -X POST "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/sendVideo" \
             "${SEND_VIDEO_FORM_ARGS[@]}")"
 
-          echo "TELEGRAM_SEND_COMPLETED=1"
+          echo "TELEGRAM_SEND_ATTEMPTED=1"
+          echo "TELEGRAM_HTTP_CODE=${HTTP_CODE}"
 
           if ! echo "$HTTP_CODE" | grep -Eq '^2'; then
-            echo "ERROR: sendVideo failed."
+            TELEGRAM_ERROR_DESC="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); print(str(data.get("description") or "sendVideo failed")[:300])' "$RUNNER_TEMP/send-video-response.json" 2>/dev/null || printf '%s' 'sendVideo failed without JSON response')"
+            echo "ERROR: sendVideo failed. HTTP=${HTTP_CODE}. ${TELEGRAM_ERROR_DESC}"
             exit 1
           fi
 
           if ! grep -q '"ok":true' "$RUNNER_TEMP/send-video-response.json"; then
-            echo "ERROR: Telegram returned non-ok response."
+            TELEGRAM_ERROR_DESC="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); print(str(data.get("description") or "Telegram returned non-ok response")[:300])' "$RUNNER_TEMP/send-video-response.json" 2>/dev/null || printf '%s' 'Telegram returned non-ok response without JSON details')"
+            echo "ERROR: Telegram returned non-ok response. ${TELEGRAM_ERROR_DESC}"
             exit 1
           fi
+
+          echo "TELEGRAM_SEND_COMPLETED=1"
 
           TELEGRAM_SENT_MESSAGE_ID="$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1], encoding="utf-8")).get("result") or {}).get("message_id") or "")' "$RUNNER_TEMP/send-video-response.json" 2>/dev/null || true)"
 
