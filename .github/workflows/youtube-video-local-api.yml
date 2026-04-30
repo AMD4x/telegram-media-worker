@@ -283,8 +283,8 @@ jobs:
               -map_metadata -1 \
               -vf "scale=w='if(gte(dar,1),min(1920,trunc(ih*dar/2)*2),-2)':h='if(gte(dar,1),-2,min(1920,trunc(iw/dar/2)*2))':flags=bicubic,setsar=1,format=yuv420p" \
               -c:v libx264 \
-              -preset ultrafast \
-              -crf 24 \
+              -preset superfast \
+              -crf 23 \
               -profile:v main \
               -level 4.1 \
               -tag:v avc1 \
