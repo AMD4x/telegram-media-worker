@@ -418,10 +418,16 @@ jobs:
               exit 1
             fi
 
-            GETME_RESPONSE="$(curl -sS --connect-timeout 2 --max-time 5 \
-              "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/getMe" 2>/dev/null || true)"
+            PORT_HTTP_CODE="$(
+              curl -sS \
+                --connect-timeout 1 \
+                --max-time 2 \
+                -o /dev/null \
+                -w "%{http_code}" \
+                "http://127.0.0.1:8081/" 2>/dev/null || true
+            )"
 
-            if echo "$GETME_RESPONSE" | grep -q '"ok":true'; then
+            if [ -n "${PORT_HTTP_CODE:-}" ] && [ "$PORT_HTTP_CODE" != "000" ]; then
               echo "LOCAL_BOT_API_READY=1"
               BOT_API_READY=1
               update_progress 20 "Local API Ready" "Upload channel is ready."
