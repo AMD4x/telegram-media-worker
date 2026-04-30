@@ -461,10 +461,12 @@ jobs:
           fi
 
           if [ "$NORMALIZED_MAX_HEIGHT" = "auto" ]; then
-            YOUTUBE_FORMAT_SELECTOR="bv*[ext=mp4][vcodec^=avc1][height<=1080]+ba[ext=m4a]/b[ext=mp4][vcodec^=avc1][acodec^=mp4a][height<=1080]/bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080][acodec!=none]/bv*+ba/best"
+            YOUTUBE_TARGET_HEIGHT="2160"
           else
-            YOUTUBE_FORMAT_SELECTOR="bv*[ext=mp4][vcodec^=avc1][height<=${NORMALIZED_MAX_HEIGHT}]+ba[ext=m4a]/b[ext=mp4][vcodec^=avc1][acodec^=mp4a][height<=${NORMALIZED_MAX_HEIGHT}]/bv*[ext=mp4][height<=${NORMALIZED_MAX_HEIGHT}]+ba[ext=m4a]/b[ext=mp4][height<=${NORMALIZED_MAX_HEIGHT}][acodec!=none]/bv*[height<=${NORMALIZED_MAX_HEIGHT}]+ba/best[height<=${NORMALIZED_MAX_HEIGHT}]/best"
+            YOUTUBE_TARGET_HEIGHT="$NORMALIZED_MAX_HEIGHT"
           fi
+
+          YOUTUBE_FORMAT_SELECTOR="bv*[ext=mp4][vcodec^=avc1][height<=${YOUTUBE_TARGET_HEIGHT}]+ba[ext=m4a]/b[ext=mp4][vcodec^=avc1][acodec^=mp4a][height<=${YOUTUBE_TARGET_HEIGHT}]/bv*[height<=${YOUTUBE_TARGET_HEIGHT}]+ba/bestvideo[height<=${YOUTUBE_TARGET_HEIGHT}]+bestaudio/best[height<=${YOUTUBE_TARGET_HEIGHT}]/best"
 
           update_progress 30 "Processing" "Preparing media safely..."
           echo "== Processing media securely =="
