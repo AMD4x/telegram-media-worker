@@ -531,15 +531,26 @@ jobs:
           update_progress 82 "Uploading" "Uploading final media to Telegram..."
           echo "== Send final media =="
 
+          SEND_VIDEO_FORM_ARGS=(
+            -F "chat_id=${TELEGRAM_CHAT_ID}"
+            -F "supports_streaming=true"
+            -F "video=@${MEDIA_FILE}"
+          )
+
+          if [ -n "${VIDEO_WIDTH:-}" ] && [ -n "${VIDEO_HEIGHT:-}" ]; then
+            SEND_VIDEO_FORM_ARGS+=(
+              -F "width=${VIDEO_WIDTH}"
+              -F "height=${VIDEO_HEIGHT}"
+            )
+          fi
+
           HTTP_CODE="$(curl -sS \
             --connect-timeout 20 \
             --max-time 7200 \
             -o "$RUNNER_TEMP/send-video-response.json" \
             -w "%{http_code}" \
             -X POST "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/sendVideo" \
-            -F "chat_id=${TELEGRAM_CHAT_ID}" \
-            -F "supports_streaming=true" \
-            -F "video=@${MEDIA_FILE}")"
+            "${SEND_VIDEO_FORM_ARGS[@]}")"
 
           echo "TELEGRAM_SEND_COMPLETED=1"
 
