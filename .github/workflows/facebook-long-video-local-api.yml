@@ -273,6 +273,8 @@ jobs:
               -c:v libx264 \
               -preset ultrafast \
               -crf 24 \
+              -maxrate 6500k \
+              -bufsize 13000k \
               -profile:v main \
               -level 4.1 \
               -tag:v avc1 \
@@ -292,6 +294,10 @@ jobs:
               echo "ERROR: Safe transcode output is invalid." >&2
               return 1
             fi
+
+            printf "%s" "$output_file"
+            return 0
+          }
 
             printf "%s" "$output_file"
             return 0
