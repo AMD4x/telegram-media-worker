@@ -547,17 +547,22 @@ jobs:
             -X POST "http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}/sendVideo" \
             "${SEND_VIDEO_FORM_ARGS[@]}")"
 
-          echo "TELEGRAM_SEND_COMPLETED=1"
+          echo "TELEGRAM_SEND_ATTEMPTED=1"
+          echo "TELEGRAM_HTTP_CODE=${HTTP_CODE}"
 
           if ! echo "$HTTP_CODE" | grep -Eq '^2'; then
-            echo "ERROR: sendVideo failed."
+            TELEGRAM_ERROR_DESC="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); print(str(data.get("description") or "sendVideo failed")[:300])' "$RUNNER_TEMP/send-video-response.json" 2>/dev/null || printf '%s' 'sendVideo failed without JSON response')"
+            echo "ERROR: sendVideo failed. HTTP=${HTTP_CODE}. ${TELEGRAM_ERROR_DESC}"
             exit 1
           fi
 
           if ! grep -q '"ok":true' "$RUNNER_TEMP/send-video-response.json"; then
-            echo "ERROR: Telegram returned non-ok response."
+            TELEGRAM_ERROR_DESC="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); print(str(data.get("description") or "Telegram returned non-ok response")[:300])' "$RUNNER_TEMP/send-video-response.json" 2>/dev/null || printf '%s' 'Telegram returned non-ok response without JSON details')"
+            echo "ERROR: Telegram returned non-ok response. ${TELEGRAM_ERROR_DESC}"
             exit 1
           fi
+
+          echo "TELEGRAM_SEND_COMPLETED=1"
 
           TELEGRAM_SENT_MESSAGE_ID="$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1], encoding="utf-8")).get("result") or {}).get("message_id") or "")' "$RUNNER_TEMP/send-video-response.json" 2>/dev/null || true)"
 
