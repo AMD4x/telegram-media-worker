@@ -60,10 +60,10 @@ body:
     attributes:
       label: Were cookies enabled?
       options:
-        - yes
-        - no
-        - not applicable
-        - not sure
+        - "yes"
+        - "no"
+        - "not applicable"
+        - "not sure"
     validations:
       required: true
 
