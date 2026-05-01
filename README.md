@@ -17,6 +17,7 @@ This repository runs temporary media jobs on GitHub-hosted runners, prepares the
 - Supports large Telegram uploads through Local Bot API when configured.
 - Supports document ZIP mode and split ZIP parts in the generic workflow.
 - Supports admin-oriented torrent document delivery with file listing, selected file indexes, all-file mode, safe small-document delivery, and Telegram-safe split document parts.
+- Includes an optional Windows Explorer helper, AMD4x Merge, for joining downloaded split parts from the right-click menu.
 
 ## Why this exists
 
@@ -37,7 +38,7 @@ Small home servers, Raspberry Pi bots, and lightweight Telegram bot hosts are go
 | Source URL / requested output | Recommended workflow |
 |---|---|
 | Direct downloadable file to Telegram as a document | `remote-media.yml` with `send_as=document` |
-| Any URL that should be zipped before sending | `remote-media.yml` with `send_as=document` and `document_mode=zip` |
+| Any URL that should be zipped before sending | `remote-media.yml` with `send_as=document` and `document_mode=zip`; oversized ZIP output may be restored on Windows with AMD4x Merge |
 | Generic platform video | `remote-media.yml` with `send_as=video` |
 | YouTube video | `youtube-video-local-api.yml` for video-only output; `remote-media.yml` for document mode |
 | TikTok video | `tiktok-direct-local-api.yml` for video-only output; `remote-media.yml` for document mode |
@@ -102,11 +103,11 @@ See:
 - In dedicated platform workflows, `send_as` and `output_filename` are compatibility inputs only and are not used to change behavior.
 - Large uploads require `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` because the worker must start Telegram Local Bot API.
 - Direct public Bot API uploads are used for smaller files where possible.
-- The generic workflow can create ZIP documents and split oversized ZIPs into Telegram-safe parts.
+- The generic workflow can create ZIP documents and split oversized ZIPs into Telegram-safe `.001`, `.002`, etc. parts. Windows users can join these parts with [`tools/windows/amd4x-merge`](tools/windows/amd4x-merge).
 - `torrent-document-local-api.yml` is document-only and uses `torrent_url` instead of `media_url`.
 - Torrent workflows should normally be used as an admin-oriented path: run `list` first, then run `selected` with explicit file indexes, or `all` when every torrent file is intended.
 - The torrent workflow sends small documents through Telegram Public Bot API when possible, uses Telegram Local Bot API for larger documents, and splits oversized files into Telegram-safe raw binary parts.
-- Split torrent parts are not ZIP/RAR archives. They are named like `filename.ext.part001`, `filename.ext.part002`, and must be joined in order to restore the original file.
+- Split torrent parts are not ZIP/RAR archives. They are named like `filename.ext.part001`, `filename.ext.part002`, and must be joined in order to restore the original file. Windows users can use [`tools/windows/amd4x-merge`](tools/windows/amd4x-merge) instead of typing the `copy /b` command manually.
 - TikTok support may depend on a third-party direct resolver and/or `yt-dlp`; platform behavior can change without repository changes.
 
 ## Workflow details
@@ -118,6 +119,16 @@ Detailed behavior is documented in:
 - [`docs/supported-platforms.md`](docs/supported-platforms.md)
 - [`docs/usage-from-bot.md`](docs/usage-from-bot.md)
 - [`docs/troubleshooting.md`](docs/troubleshooting.md)
+
+## User tools
+
+Optional user-side helper tools are available in [`tools/`](tools/).
+
+Current tool:
+
+- [`AMD4x Merge`](tools/windows/amd4x-merge/) — optional Windows Explorer context-menu helper for joining downloaded split parts such as `.part001` and `.001`.
+
+These tools are optional. They do not change GitHub Actions workflows, Telegram upload behavior, repository secrets, runtime logic, or workflow inputs.
 
 ## Security notes
 
@@ -142,7 +153,7 @@ Known limitations:
 - Dedicated platform workflows do not support `document_mode`.
 - Instagram, X/Twitter, and Reddit are handled only by the generic workflow and have no dedicated cookie path.
 - TikTok extraction depends on external platform behavior and may require fallback paths.
-- Torrent delivery is document-only and does not perform media conversion or Telegram/iPhone video compatibility preparation. Split torrent parts are raw binary chunks, not archives.
+- Torrent delivery is document-only and does not perform media conversion or Telegram/iPhone video compatibility preparation. Split torrent parts are raw binary chunks, not archives, and can be restored manually or with AMD4x Merge on Windows.
 
 ## License
 
