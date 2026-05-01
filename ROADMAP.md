@@ -4,15 +4,15 @@ This roadmap lists possible future improvements. It does not imply that the curr
 
 ## v0.1 — Documentation and public usage
 
-- Add README.
-- Add security notes.
-- Add secrets guide.
-- Add troubleshooting guide.
-- Add examples for common workflow inputs.
+- ✅ Add README.
+- ✅ Add security notes.
+- ✅ Add secrets guide.
+- ✅ Add troubleshooting guide.
+- ✅ Add examples for common workflow inputs.
 
 ## v0.2 — Better user-facing packaging
 
-- Add clear repository description and topics.
+- ✅ Add clear repository description and topics.
 - Add GitHub releases.
 - Add changelog discipline.
 - Add issue and pull request templates.
