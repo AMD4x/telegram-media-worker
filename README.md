@@ -10,13 +10,13 @@ This repository runs temporary media jobs on GitHub-hosted runners, prepares the
 - Sends media to Telegram as video or document, depending on workflow support.
 - Supports progress updates by editing an existing Telegram message.
 - Uses `yt-dlp`, `ffmpeg`, `ffprobe`, `curl`, Python helpers, and Telegram Bot API / Telegram Local Bot API.
-- Supports a generic `remote-media.yml` workflow plus dedicated Local Bot API workflows for YouTube, TikTok, Facebook, and torrent document delivery.
+- Supports a generic `remote-media.yml` workflow plus dedicated workflows for YouTube, TikTok, Facebook, and torrent document delivery.
 - Can be started manually from GitHub Actions or programmatically from a Telegram bot through `workflow_dispatch`.
 - Masks sensitive inputs in GitHub Actions logs where possible.
 - Prepares Telegram/iPhone-compatible video output when the selected workflow includes compatibility preparation.
 - Supports large Telegram uploads through Local Bot API when configured.
 - Supports document ZIP mode and split ZIP parts in the generic workflow.
-- Supports admin-oriented torrent document delivery with file listing, selected file indexes, all-file mode, and Telegram-safe split document parts.
+- Supports admin-oriented torrent document delivery with file listing, selected file indexes, all-file mode, safe small-document delivery, and Telegram-safe split document parts.
 
 ## Why this exists
 
@@ -30,7 +30,7 @@ Small home servers, Raspberry Pi bots, and lightweight Telegram bot hosts are go
 | `.github/workflows/youtube-video-local-api.yml` | YouTube video sender | Video only | Local Bot API | No | YouTube-focused path with Telegram/iPhone compatibility preparation. |
 | `.github/workflows/tiktok-direct-local-api.yml` | TikTok direct video sender | Video only | Local Bot API | No | Tries direct TikTok resolver first, then `yt-dlp` fallbacks, while requiring audio and Telegram-compatible video. |
 | `.github/workflows/facebook-long-video-local-api.yml` | Facebook long-video sender | Video only | Local Bot API | No | Facebook-focused path with optional cookies and Telegram/iPhone compatibility preparation. |
-| `.github/workflows/torrent-document-local-api.yml` | Torrent document sender | Document only | Local Bot API | Yes | Lists torrent contents, supports selected file indexes, all-file mode, and split document delivery. |
+| `.github/workflows/torrent-document-local-api.yml` | Torrent document sender | Document only | Public Bot API for small documents, Local Bot API for large documents and parts | Yes | Lists torrent contents, supports selected file indexes, all-file mode, safe upload filenames, and split document delivery. |
 
 ## Quick routing guide
 
@@ -105,7 +105,8 @@ See:
 - The generic workflow can create ZIP documents and split oversized ZIPs into Telegram-safe parts.
 - `torrent-document-local-api.yml` is document-only and uses `torrent_url` instead of `media_url`.
 - Torrent workflows should normally be used as an admin-oriented path: run `list` first, then run `selected` with explicit file indexes, or `all` when every torrent file is intended.
-- The torrent workflow sends documents through Telegram Local Bot API and splits oversized files into Telegram-safe parts.
+- The torrent workflow sends small documents through Telegram Public Bot API when possible, uses Telegram Local Bot API for larger documents, and splits oversized files into Telegram-safe raw binary parts.
+- Split torrent parts are not ZIP/RAR archives. They are named like `filename.ext.part001`, `filename.ext.part002`, and must be joined in order to restore the original file.
 - TikTok support may depend on a third-party direct resolver and/or `yt-dlp`; platform behavior can change without repository changes.
 
 ## Workflow details
@@ -132,7 +133,7 @@ The repository currently contains five workflow families:
 - YouTube Local Bot API video worker.
 - TikTok Direct Local Bot API video worker.
 - Facebook Long Video Local Bot API video worker.
-- Torrent document worker with file listing, selected indexes, all-file mode, and split document delivery.
+- Torrent document worker with file listing, selected indexes, all-file mode, safe small-document delivery, safe upload filenames, and split raw-part document delivery.
 
 Known limitations:
 
@@ -141,7 +142,7 @@ Known limitations:
 - Dedicated platform workflows do not support `document_mode`.
 - Instagram, X/Twitter, and Reddit are handled only by the generic workflow and have no dedicated cookie path.
 - TikTok extraction depends on external platform behavior and may require fallback paths.
-- Torrent delivery is document-only and does not perform media conversion or Telegram/iPhone video compatibility preparation.
+- Torrent delivery is document-only and does not perform media conversion or Telegram/iPhone video compatibility preparation. Split torrent parts are raw binary chunks, not archives.
 
 ## License
 
