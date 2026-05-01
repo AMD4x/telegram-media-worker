@@ -82,3 +82,10 @@ For best results, keep all parts in the same folder and use the first part only.
 ## Safety
 
 Only use this helper on split parts from a source you trust. The helper joins files locally on your Windows machine and does not upload anything.
+
+## Related documentation
+
+- `docs/usage-from-bot.md`
+- `docs/workflows.md`
+- `docs/supported-platforms.md`
+- `docs/troubleshooting.md`.
