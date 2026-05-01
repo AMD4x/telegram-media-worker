@@ -960,26 +960,91 @@ jobs:
 
             SAFE_LIST="$(
               awk -F'|' '
-                /^[[:space:]]*[0-9]+[[:space:]]*\|/ {
-                  idx=$1
-                  path=$2
-                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", idx)
-                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", path)
+                function trim(s) {
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+                  return s
+                }
 
-                  size=""
+                function clean_path(s) {
+                  gsub(/^\.\//, "", s)
+                  gsub(/^\/+|\/+$/, "", s)
+                  return s
+                }
+
+                function add_item(idx, path, size,    n, parts, folder, filename, j) {
+                  path = clean_path(path)
+
+                  if (path == "") {
+                    path = "unnamed"
+                  }
+
+                  n = split(path, parts, "/")
+
+                  if (n > 1) {
+                    filename = parts[n]
+                    folder = parts[1]
+
+                    for (j = 2; j < n; j++) {
+                      folder = folder "/" parts[j]
+                    }
+                  } else {
+                    filename = path
+                    folder = "Files"
+                  }
+
+                  if (!(folder in folder_seen)) {
+                    folder_seen[folder] = 1
+                    folder_count++
+                    folder_order[folder_count] = folder
+                  }
+
+                  item_count[folder]++
+                  item_idx[folder, item_count[folder]] = idx
+                  item_name[folder, item_count[folder]] = filename
+                  item_size[folder, item_count[folder]] = size
+                }
+
+                /^[[:space:]]*[0-9]+[[:space:]]*\|/ {
+                  idx = trim($1)
+                  path = trim($2)
+                  size = ""
+
                   if ((getline nextline) > 0 && nextline ~ /^[[:space:]]*\|/) {
                     split(nextline, parts, "|")
-                    size=parts[2]
-                    gsub(/^[[:space:]]+|[[:space:]]+$/, "", size)
+                    size = trim(parts[2])
                   }
 
-                  if (size != "") {
-                    printf "%s) %s\n   %s\n", idx, path, size
-                  } else {
-                    printf "%s) %s\n", idx, path
+                  total_items++
+
+                  if (total_items <= 80) {
+                    add_item(idx, path, size)
                   }
                 }
-              ' "$LIST_LOG" | head -n 80
+
+                END {
+                  for (g = 1; g <= folder_count; g++) {
+                    folder = folder_order[g]
+
+                    if (g > 1) {
+                      print ""
+                    }
+
+                    if (folder == "Files") {
+                      print "📄 Files"
+                    } else {
+                      print "📁 " folder
+                    }
+
+                    for (i = 1; i <= item_count[folder]; i++) {
+                      print item_idx[folder, i] ") " item_name[folder, i]
+
+                      if (item_size[folder, i] != "") {
+                        print "   " item_size[folder, i]
+                      }
+                    }
+                  }
+                }
+              ' "$LIST_LOG"
             )"
 
             if [ -z "$SAFE_LIST" ]; then
@@ -988,7 +1053,7 @@ jobs:
               exit 1
             fi
 
-            SAFE_LIST="$(printf "%s" "$SAFE_LIST" | head -c 3200)"
+            SAFE_LIST="$(printf "%s" "$SAFE_LIST" | python3 -c 'import sys; text=sys.stdin.read(); print(text[:3200], end="")')"
 
             printf -v list_notice_body '%s\n\nRun again with:\nfile_mode=selected\nselected_files=1 or 1,3 or 1-4' "$SAFE_LIST"
 
@@ -1019,8 +1084,9 @@ jobs:
             --seed-ratio=0.0 \
             --max-overall-upload-limit=1K \
             --disable-ipv6=true \
-            --enable-dht=false \
+            --enable-dht=true \
             --enable-dht6=false \
+            --dht-file-path="$RUNNER_TEMP/aria2-dht-download.dat" \
             --follow-torrent=mem \
             --bt-stop-timeout=300 \
             --bt-max-peers=80 \
