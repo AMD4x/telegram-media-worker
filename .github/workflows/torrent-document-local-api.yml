@@ -295,6 +295,9 @@ jobs:
             fi
 
             sed -E \
+              -e '/Exception caught while loading DHT routing table/d' \
+              -e '/DHTRoutingTableDeserializer/d' \
+              -e '/Failed to load DHT routing table/d' \
               -e 's#magnet:\?[^[:space:]]+#<masked-magnet>#g' \
               -e 's#https?://[^[:space:]]+#<masked-url>#g' \
               -e 's#[A-Fa-f0-9]{40}#<masked-info-hash>#g' \
