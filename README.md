@@ -24,7 +24,7 @@ Small home servers, Raspberry Pi bots, and lightweight Telegram bot hosts are go
 ## Current workflow family
 
 | Workflow | Main purpose | Output type | Telegram sender | Document mode | Notes |
-|---|---|---:|---|---:|---|
+|---|---|:---:|---|:---:|---|
 | `.github/workflows/remote-media.yml` | Generic remote media/file worker | Video or document | Public Bot API for small files, Local Bot API for larger files when needed | Yes | Broadest workflow. Detects several platforms and direct downloadable files. |
 | `.github/workflows/youtube-video-local-api.yml` | YouTube video sender | Video only | Local Bot API | No | YouTube-focused path with Telegram/iPhone compatibility preparation. |
 | `.github/workflows/tiktok-direct-local-api.yml` | TikTok direct video sender | Video only | Local Bot API | No | Tries direct TikTok resolver first, then `yt-dlp` fallbacks, while requiring audio and Telegram-compatible video. |
