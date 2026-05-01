@@ -898,6 +898,7 @@ jobs:
 
             if printf "%s" "$LOWER_TORRENT_URL" | grep -q '^magnet:'; then
               set +e
+
               timeout 240s aria2c \
                 --dir="$LIST_DIR" \
                 --bt-metadata-only=true \
@@ -911,12 +912,30 @@ jobs:
                 --bt-stop-timeout=180 \
                 --summary-interval=0 \
                 --console-log-level=warn \
-                "$TORRENT_SOURCE" > "$LIST_FETCH_LOG" 2>&1
+                "$TORRENT_SOURCE" > "$LIST_FETCH_LOG" 2>&1 &
+
+              ARIA2_METADATA_PID="$!"
+              ARIA2_METADATA_WAIT_SECONDS=0
+
+              while kill -0 "$ARIA2_METADATA_PID" >/dev/null 2>&1; do
+                sleep 20
+                ARIA2_METADATA_WAIT_SECONDS="$((ARIA2_METADATA_WAIT_SECONDS + 20))"
+                echo "ARIA2_METADATA_WAIT_SECONDS=masked"
+                progress_stage "listing_files" "25" "Listing" "Fetching_torrent_file_list"
+              done
+
+              wait "$ARIA2_METADATA_PID"
               ARIA2_METADATA_RC="$?"
+
               set -e
 
               echo "ARIA2_METADATA_RC=${ARIA2_METADATA_RC}"
               print_torrent_log_safely "$LIST_FETCH_LOG"
+
+              if [ "$ARIA2_METADATA_RC" -ne 0 ]; then
+                echo "ERROR: Could not fetch torrent metadata within the listing timeout."
+                exit 1
+              fi
 
               LIST_TORRENT_FILE="$(find "$LIST_DIR" "$RUNNER_TEMP" "$PWD" -type f -name "*.torrent" -printf "%T@ %p\n" 2>/dev/null | sort -nr | head -n 1 | cut -d " " -f2- || true)"
             else
