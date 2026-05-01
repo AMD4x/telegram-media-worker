@@ -1070,6 +1070,70 @@ jobs:
             exit 0
           fi
 
+          if [ "$FILE_MODE" = "selected" ] && printf "%s" "$LOWER_TORRENT_URL" | grep -q '^magnet:'; then
+            progress_stage "preparing_selected_metadata" "28" "Preparing" "Preparing_selected_torrent_metadata"
+
+            SELECT_DIR="$RUNNER_TEMP/torrent-selected"
+            SELECT_FETCH_LOG="$RUNNER_TEMP/torrent-selected-fetch.log"
+            SELECT_TORRENT_FILE=""
+
+            rm -rf "$SELECT_DIR"
+            mkdir -p "$SELECT_DIR"
+
+            set +e
+
+            timeout 240s aria2c \
+              --dir="$SELECT_DIR" \
+              --bt-metadata-only=true \
+              --bt-save-metadata=true \
+              --seed-time=0 \
+              --seed-ratio=0.0 \
+              --max-overall-upload-limit=1K \
+              --disable-ipv6=true \
+              --enable-dht=true \
+              --enable-dht6=false \
+              --dht-file-path="$RUNNER_TEMP/aria2-dht-selected.dat" \
+              --bt-stop-timeout=180 \
+              --summary-interval=0 \
+              --console-log-level=warn \
+              "$TORRENT_SOURCE" > "$SELECT_FETCH_LOG" 2>&1 &
+
+            ARIA2_SELECTED_METADATA_PID="$!"
+            ARIA2_SELECTED_METADATA_WAIT_SECONDS=0
+
+            while kill -0 "$ARIA2_SELECTED_METADATA_PID" >/dev/null 2>&1; do
+              sleep 5
+              ARIA2_SELECTED_METADATA_WAIT_SECONDS="$((ARIA2_SELECTED_METADATA_WAIT_SECONDS + 5))"
+
+              if [ "$((ARIA2_SELECTED_METADATA_WAIT_SECONDS % 20))" -eq 0 ]; then
+                echo "ARIA2_SELECTED_METADATA_WAIT_SECONDS=masked"
+                progress_stage "preparing_selected_metadata" "28" "Preparing" "Preparing_selected_torrent_metadata"
+              fi
+            done
+
+            wait "$ARIA2_SELECTED_METADATA_PID"
+            ARIA2_SELECTED_METADATA_RC="$?"
+
+            set -e
+
+            echo "ARIA2_SELECTED_METADATA_RC=${ARIA2_SELECTED_METADATA_RC}"
+            print_torrent_log_safely "$SELECT_FETCH_LOG"
+
+            if [ "$ARIA2_SELECTED_METADATA_RC" -ne 0 ]; then
+              echo "ERROR: Could not fetch selected torrent metadata."
+              exit 1
+            fi
+
+            SELECT_TORRENT_FILE="$(find "$SELECT_DIR" "$RUNNER_TEMP" "$PWD" -type f -name "*.torrent" -printf "%T@ %p\n" 2>/dev/null | sort -nr | head -n 1 | cut -d " " -f2- || true)"
+
+            if [ -z "$SELECT_TORRENT_FILE" ] || [ ! -s "$SELECT_TORRENT_FILE" ]; then
+              echo "ERROR: Selected torrent metadata file was not found."
+              exit 1
+            fi
+
+            TORRENT_SOURCE="$SELECT_TORRENT_FILE"
+          fi
+
           progress_stage "downloading" "30" "Downloading" "Downloading_torrent_content"
 
           ARIA2_SELECT_ARGS=()
