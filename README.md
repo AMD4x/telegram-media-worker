@@ -105,8 +105,11 @@ See [`docs/troubleshooting.md`](docs/troubleshooting.md).
 
 ## Project status
 
-This repository is currently workflow-first. Existing workflows are intentionally left as-is for stability. Future work can add a cleaner wrapper layer, JSON payload support, artifact output, and reusable GitHub Action packaging.
+All four workflow families are working and functionally complete. The Docker image rebuilds automatically when yt-dlp or Deno release updates.
 
+Known limitations include duplicated progress helpers across platform workflows, no `workflow_call` interface, and no `document_mode` support in dedicated platform workflows. Instagram, X/Twitter, and Reddit fall through to the generic remote-media path without dedicated cookie support.
+
+Possible future additions are tracked in [`ROADMAP.md`](ROADMAP.md).
 See [`ROADMAP.md`](ROADMAP.md).
 
 ## License
