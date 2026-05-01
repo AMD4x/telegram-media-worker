@@ -821,6 +821,64 @@ jobs:
             exit 1
           fi
 
+          SELECTED_FILES_EXPANDED="$SELECTED_FILES"
+
+          if [ "$FILE_MODE" = "selected" ]; then
+            SELECTED_FILES_EXPANDED=""
+
+            IFS=',' read -ra selected_parts <<< "$SELECTED_FILES"
+
+            for selected_part in "${selected_parts[@]}"; do
+              selected_part="${selected_part//[[:space:]]/}"
+
+              if [ -z "$selected_part" ]; then
+                continue
+              fi
+
+              if [[ "$selected_part" == *-* ]]; then
+                selected_start="${selected_part%-*}"
+                selected_end="${selected_part#*-}"
+
+                selected_start_num=$((10#$selected_start))
+                selected_end_num=$((10#$selected_end))
+
+                if [ "$selected_start_num" -gt "$selected_end_num" ]; then
+                  selected_tmp="$selected_start_num"
+                  selected_start_num="$selected_end_num"
+                  selected_end_num="$selected_tmp"
+                fi
+
+                for ((selected_idx=selected_start_num; selected_idx<=selected_end_num; selected_idx++)); do
+                  if [[ ",$SELECTED_FILES_EXPANDED," != *",$selected_idx,"* ]]; then
+                    if [ -z "$SELECTED_FILES_EXPANDED" ]; then
+                      SELECTED_FILES_EXPANDED="$selected_idx"
+                    else
+                      SELECTED_FILES_EXPANDED="${SELECTED_FILES_EXPANDED},${selected_idx}"
+                    fi
+                  fi
+                done
+              else
+                selected_idx="$((10#$selected_part))"
+
+                if [[ ",$SELECTED_FILES_EXPANDED," != *",$selected_idx,"* ]]; then
+                  if [ -z "$SELECTED_FILES_EXPANDED" ]; then
+                    SELECTED_FILES_EXPANDED="$selected_idx"
+                  else
+                    SELECTED_FILES_EXPANDED="${SELECTED_FILES_EXPANDED},${selected_idx}"
+                  fi
+                fi
+              fi
+            done
+
+            if [ -z "$SELECTED_FILES_EXPANDED" ]; then
+              echo "ERROR: selected_files expansion produced an empty selection."
+              exit 1
+            fi
+
+            echo "::add-mask::${SELECTED_FILES_EXPANDED}"
+            echo "SELECTED_FILES_EXPANDED=masked"
+          fi
+
           if ! printf "%s" "$SPLIT_PART_MIB" | grep -Eq '^[0-9]+$'; then
             SPLIT_PART_MIB="1900"
           fi
@@ -1139,7 +1197,7 @@ jobs:
           ARIA2_SELECT_ARGS=()
 
           if [ "$FILE_MODE" = "selected" ]; then
-            ARIA2_SELECT_ARGS+=(--select-file="$SELECTED_FILES")
+            ARIA2_SELECT_ARGS+=(--select-file="$SELECTED_FILES_EXPANDED")
           fi
 
           ARIA2_DOWNLOAD_LOG="$RUNNER_TEMP/aria2-download.log"
@@ -1155,6 +1213,7 @@ jobs:
             --enable-dht6=false \
             --dht-file-path="$RUNNER_TEMP/aria2-dht-download.dat" \
             --follow-torrent=mem \
+            --bt-remove-unselected-file=true \
             --bt-stop-timeout=300 \
             --bt-max-peers=80 \
             --max-connection-per-server=8 \
@@ -1183,9 +1242,65 @@ jobs:
 
           rm -f "$MANIFEST"
 
-          find "$DOWNLOAD_DIR" -type f ! -name "*.aria2" -printf "%s\t%p\n" \
-            | sort -nr \
-            | cut -f2- > "$MANIFEST"
+          if [ "$FILE_MODE" = "selected" ]; then
+            SELECT_INDEX_LOG="$RUNNER_TEMP/torrent-selected-index.log"
+            SELECTED_REL_PATHS="$RUNNER_TEMP/torrent-selected-paths.txt"
+
+            aria2c -S "$TORRENT_SOURCE" > "$SELECT_INDEX_LOG" 2>&1 || true
+
+            awk -F'|' -v selected=",$SELECTED_FILES_EXPANDED," '
+              function trim(s) {
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+                return s
+              }
+
+              /^[[:space:]]*[0-9]+[[:space:]]*\|/ {
+                idx = trim($1)
+                path = trim($2)
+
+                if (index(selected, "," idx ",") > 0) {
+                  gsub(/^\.\//, "", path)
+                  gsub(/^\/+|\/+$/, "", path)
+
+                  if (path != "") {
+                    print path
+                  }
+                }
+              }
+            ' "$SELECT_INDEX_LOG" > "$SELECTED_REL_PATHS"
+
+            if [ ! -s "$SELECTED_REL_PATHS" ]; then
+              echo "ERROR: Could not map selected torrent indexes to file paths."
+              print_torrent_log_safely "$SELECT_INDEX_LOG"
+              exit 1
+            fi
+
+            while IFS= read -r rel_path; do
+              selected_path="$DOWNLOAD_DIR/$rel_path"
+
+              if [ ! -f "$selected_path" ]; then
+                echo "ERROR: Selected file was not downloaded."
+                echo "TORRENT_SELECTED_REL_PATH=masked"
+                exit 1
+              fi
+
+              selected_size="$(stat -c%s "$selected_path" 2>/dev/null || echo 0)"
+
+              if [ "$selected_size" -le 0 ]; then
+                echo "ERROR: Selected file is empty after download."
+                echo "TORRENT_SELECTED_REL_PATH=masked"
+                exit 1
+              fi
+
+              printf "%s\t%s\n" "$selected_size" "$selected_path"
+            done < "$SELECTED_REL_PATHS" \
+              | sort -nr \
+              | cut -f2- > "$MANIFEST"
+          else
+            find "$DOWNLOAD_DIR" -type f ! -name "*.aria2" -printf "%s\t%p\n" \
+              | sort -nr \
+              | cut -f2- > "$MANIFEST"
+          fi
 
           if [ ! -s "$MANIFEST" ]; then
             echo "ERROR: No downloaded files were found."
