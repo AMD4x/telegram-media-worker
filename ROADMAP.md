@@ -13,9 +13,9 @@ This roadmap lists possible future improvements. It does not imply that the curr
 ## v0.2 — Better user-facing packaging
 
 - ✅ Add clear repository description and topics.
-- Add GitHub releases.
-- Add changelog discipline.
-- Add issue and pull request templates.
+- ✅ Add GitHub releases.
+- ✅ Add changelog discipline.
+- ✅ Add issue and pull request templates.
 
 ## v0.3 — Safer workflow interface
 
