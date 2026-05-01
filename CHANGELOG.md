@@ -25,4 +25,13 @@ The format loosely follows "Keep a Changelog" style, with simple sections for Ad
 
 ## [Unreleased]
 
-_(nothing pending)_
+### Added
+
+- Added AMD4x Merge as an optional Windows Explorer helper for joining downloaded split parts.
+- Added AMD4x Merge documentation under `tools/windows/amd4x-merge/`.
+- Documented AMD4x Merge in the main README, bot usage guide, workflow reference, supported-platforms guide, and troubleshooting guide.
+
+### Notes
+
+- AMD4x Merge is a user-side Windows restore helper only.
+- No GitHub Actions workflow behavior, Telegram upload behavior, secrets, runtime logic, or workflow inputs were changed.
