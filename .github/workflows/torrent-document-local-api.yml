@@ -1430,10 +1430,3 @@ jobs:
             "${LAST_SEND_MODE:-local}" \
             "${LAST_SEND_METHOD:-Document}" \
             "${TOTAL_SENT_FILES:-0}"
-
-          final_notice_body=""
-          final_run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-unknown}"
-
-          printf -v final_notice_body 'Downloaded and sent torrent document(s).\nMode: %s\nSent items: %s\nRun: %s' "$FILE_MODE" "$TOTAL_SENT_FILES" "$final_run_url"
-
-          send_notice "✅ Torrent completed" "$final_notice_body"
