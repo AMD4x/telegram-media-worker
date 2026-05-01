@@ -913,7 +913,7 @@ jobs:
                 --bt-stop-timeout=180 \
                 --summary-interval=0 \
                 --console-log-level=warn \
-                "$TORRENT_SOURCE" > "$LIST_FETCH_LOG" 2>&1
+                "$TORRENT_SOURCE" > "$LIST_FETCH_LOG" 2>&1 &
 
               ARIA2_METADATA_PID="$!"
               ARIA2_METADATA_WAIT_SECONDS=0
