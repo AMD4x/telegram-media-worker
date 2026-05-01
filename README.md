@@ -33,7 +33,7 @@ The repository currently contains workflow-based workers such as:
 At minimum, most workflows need:
 
 | Secret | Required | Purpose |
-|---|---:|---|
+|---|:---:|---|
 | `TELEGRAM_TOKEN` | Yes | Telegram bot token. |
 | `TELEGRAM_CHAT_ID` | Yes | Destination chat ID. |
 | `TELEGRAM_API_ID` | Required for Local Bot API workflows | Telegram API ID. |
