@@ -145,6 +145,35 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
 }
 ```
 
+### Joining split torrent parts on Windows
+
+Large torrent documents may arrive as ordered raw binary parts such as:
+
+```text
+video.mp4.part001
+video.mp4.part002
+```
+
+These files are not ZIP/RAR archives. Put all parts in the same folder and join them from Command Prompt:
+
+```cmd
+copy /b "video.mp4.part001"+"video.mp4.part002" "video.mp4"
+```
+
+For many parts, include every part in order:
+
+```cmd
+copy /b "video.mp4.part001"+"video.mp4.part002"+"video.mp4.part003" "video.mp4"
+```
+
+### Joining split torrent parts on Linux or macOS
+
+If all parts are in the same folder and use the `.part001`, `.part002` pattern:
+
+```bash
+cat *.part??? > video.mp4
+```
+
 ## Dispatch endpoint
 
 Use GitHub REST API:
@@ -229,6 +258,8 @@ Reject or sanitize before dispatch:
 - suspicious output filenames,
 - attempts to place secrets in filenames or URLs,
 - torrent requests from non-admin users.
+
+For torrent split deliveries, the bot should tell the user that `.part001`, `.part002`, etc. are raw binary chunks and must be joined in order, not extracted as archives.
 
 ## Bot-side reliability recommendations
 

@@ -16,7 +16,7 @@ This document describes the behavior of each workflow.
 | Torrent file listing | No | No | No | No | Yes |
 | Selected torrent indexes | No | No | No | No | Yes |
 | Progress message edits | Yes | Yes | Yes | Yes | Yes |
-| Public Bot API | Yes, for small files | No | No | No | No |
+| Public Bot API | Yes, for small files | No | No | No | Yes, for small documents |
 | Local Bot API | Yes, when needed | Yes | Yes | Yes | Yes |
 | YouTube cookies | Yes | Yes | No | No | No |
 | Facebook cookies | Yes | No | No | Yes | No |
@@ -167,8 +167,9 @@ Admin-oriented torrent document workflow for:
 - listing torrent contents before download,
 - downloading selected torrent file indexes,
 - downloading all torrent files when explicitly requested,
-- sending files to Telegram as documents through Telegram Local Bot API,
-- splitting oversized documents into ordered Telegram-safe parts.
+- sending small files through Telegram Public Bot API when possible,
+- sending larger files through Telegram Local Bot API,
+- splitting oversized documents into ordered Telegram-safe raw binary parts.
 
 ### Inputs
 
@@ -198,7 +199,30 @@ Downloads and sends all torrent files.
 
 ### Upload behavior
 
-The workflow sends files through Telegram Local Bot API as documents. If a selected file is larger than the single-file limit used by the workflow, it is split into ordered parts and each part is sent as a Telegram document.
+The workflow sends files as Telegram documents. Small documents are sent through Telegram Public Bot API when possible. Larger documents use Telegram Local Bot API. If a selected file is larger than the workflow single-file threshold, it is split into ordered raw binary parts and each part is sent as a Telegram document.
+
+### Split part restore behavior
+
+Oversized torrent documents are split into raw binary parts named like:
+
+```text
+filename.ext.part001
+filename.ext.part002
+```
+
+These parts are not ZIP/RAR archives and should not be extracted with archive tools. Download all parts, keep them in order, then join them to restore the original file.
+
+On Windows Command Prompt:
+
+```cmd
+copy /b "filename.ext.part001"+"filename.ext.part002" "filename.ext"
+```
+
+On Linux/macOS:
+
+```bash
+cat *.part??? > filename.ext
+```
 
 ### Safety behavior
 
@@ -413,4 +437,5 @@ Fails if the prepared file is empty or larger than `2,000,000,000` bytes.
 - The generic workflow handles more cases but is larger and more complex.
 - Platform extraction depends on upstream websites and `yt-dlp` behavior.
 - Torrent delivery is document-only and does not perform media conversion or Telegram/iPhone video compatibility preparation.
+- Torrent split parts are raw binary chunks, not ZIP/RAR archives; users must join all parts in order to restore the original file.
 - Torrent file availability depends on peers, trackers, DHT behavior, and GitHub Actions runtime limits.

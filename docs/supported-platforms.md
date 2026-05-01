@@ -15,7 +15,7 @@ Platform support depends on the selected workflow, source URL, available cookies
 | X / Twitter | Partial | No | No dedicated cookie secret | Generic only | Generic only | Generic workflow sets X referer but has no X cookies secret. |
 | Reddit | Partial | No | No dedicated cookie secret | Generic only | Generic only | Depends on embedded media availability and `yt-dlp` support. |
 | Direct downloadable file | Yes | No | Not needed | Possible if media | Yes | Best route for document mode. |
-| Magnet / `.torrent` | No | `torrent-document-local-api.yml` | Not needed | No | Yes | Admin-oriented torrent document workflow. Supports listing, selected indexes, all files, and split document parts. |
+| Magnet / `.torrent` | No | `torrent-document-local-api.yml` | Not needed | No | Yes | Admin-oriented torrent document workflow. Supports listing, selected indexes, all files, Public Bot API for small documents, Local Bot API for large documents, and split raw binary parts. |
 | Generic media URL | Yes | No | No | Possible | Possible | Falls through to generic extraction/direct-download behavior. |
 
 ## Quality values
@@ -109,7 +109,16 @@ Recommended flow:
 2. Run `file_mode=selected` with explicit indexes such as `1`, `1,2`, or `3-5`.
 3. Use `file_mode=all` only when every torrent file is intended.
 
-The workflow sends selected files as Telegram documents through Telegram Local Bot API and can split oversized files into ordered parts.
+The workflow sends selected files as Telegram documents. Small documents can be sent through Telegram Public Bot API, while larger documents use Telegram Local Bot API. Oversized files can be split into ordered raw binary parts.
+
+Split parts are named like:
+
+```text
+filename.ext.part001
+filename.ext.part002
+```
+
+They are not ZIP/RAR archives. Download all parts and join them in order to restore the original file. On Windows, use `copy /b`; on Linux/macOS, use `cat *.part??? > output.ext`.
 
 ## Reliability expectations
 
