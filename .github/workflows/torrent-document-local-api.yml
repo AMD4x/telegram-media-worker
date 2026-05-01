@@ -582,6 +582,7 @@ jobs:
             local api_base=""
             local response_file=""
             local http_code=""
+            local send_mode="local"
 
             file_size="$(stat -c%s "$file_path" 2>/dev/null || echo 0)"
 
@@ -596,9 +597,6 @@ jobs:
             echo "TORRENT_SEND_FILE_SIZE_BYTES=masked"
             echo "TORRENT_SEND_FILE_NAME=masked"
 
-            start_local_bot_api
-            api_base="http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}"
-
             file_size_text="$(format_bytes_for_telegram "$file_size")"
             safe_display="$(printf "%s" "$display_name" | telegram_escape_html)"
             safe_size="$(printf "%s" "$file_size_text" | telegram_escape_html)"
@@ -608,10 +606,21 @@ jobs:
               return 0
             fi
 
+            if [ "$file_size" -le "$DIRECT_TELEGRAM_MAX_BYTES" ]; then
+              api_base="https://api.telegram.org/bot${TELEGRAM_TOKEN}"
+              send_mode="public"
+              echo "TELEGRAM_SEND_MODE=public"
+            else
+              start_local_bot_api
+              api_base="http://127.0.0.1:8081/bot${TELEGRAM_TOKEN}"
+              send_mode="local"
+              echo "TELEGRAM_SEND_MODE=local"
+            fi
+
             printf -v caption '%s\n📄 %s\n📦 %s' "$caption_prefix" "$safe_display" "$safe_size"
 
             progress_stage "ready_to_send" "85" "Ready" "Document_ready_to_send"
-            telegram_edit_torrent_summary "✅ <b>GitHub Torrent ready</b>" "⏳ <i>Sending to Telegram...</i>" "$file_size" "local" "Document" "${file_index}/${files_total}"
+            telegram_edit_torrent_summary "✅ <b>GitHub Torrent ready</b>" "⏳ <i>Sending to Telegram...</i>" "$file_size" "$send_mode" "Document" "${file_index}/${files_total}"
 
             sleep 3
 
@@ -630,7 +639,7 @@ jobs:
 
             TOTAL_SENT_FILES=$((TOTAL_SENT_FILES + 1))
             TOTAL_SENT_BYTES=$((TOTAL_SENT_BYTES + file_size))
-            LAST_SEND_MODE="local"
+            LAST_SEND_MODE="$send_mode"
             LAST_SEND_METHOD="Document"
 
             echo "TELEGRAM_SEND=success"
