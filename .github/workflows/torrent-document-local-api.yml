@@ -351,7 +351,6 @@ jobs:
             local file_size=""
             local file_size_text=""
             local safe_display=""
-            local notice_body=""
             local safe_size=""
             local caption=""
             local api_base=""
@@ -422,16 +421,13 @@ jobs:
             local caption=""
             local percent=""
             local safe_display=""
+            local notice_body=""
 
             file_size="$(stat -c%s "$file_path" 2>/dev/null || echo 0)"
             file_size_text="$(format_bytes "$file_size")"
             part_count="$(( (file_size + SPLIT_PART_BYTES - 1) / SPLIT_PART_BYTES ))"
             safe_display="$(printf "%s" "$display_name" | telegram_escape_html)"
 
-            send_notice \
-              "📦 Large Torrent File" \
-              "File will be sent as ${part_count} parts.
-            notice_body=""
             printf -v notice_body 'File will be sent as %s parts.\nFile: %s\nTotal size: %s\nPart size: %s MiB\nDownload all parts, then join them in order.' "$part_count" "$display_name" "$file_size_text" "$SPLIT_PART_MIB"
 
             send_notice "📦 Large Torrent File" "$notice_body"
