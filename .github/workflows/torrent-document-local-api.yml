@@ -582,7 +582,10 @@ jobs:
                 --console-log-level=warn \
                 "$TORRENT_SOURCE" || true
 
-              LIST_TORRENT_FILE="$(find "$LIST_DIR" -type f -name "*.torrent" | head -n 1 || true)"
+              LIST_TORRENT_FILE="$(find "$LIST_DIR" "$RUNNER_TEMP" "$PWD" -type f -name "*.torrent" -printf "%T@ %p\n" 2>/dev/null | sort -nr | head -n 1 | cut -d " " -f2- || true)"
+              echo "LIST_TORRENT_FILE=${LIST_TORRENT_FILE:-not_found}"
+              echo "Torrent metadata files found:"
+              find "$LIST_DIR" "$RUNNER_TEMP" "$PWD" -type f -name "*.torrent" -printf "%p\n" 2>/dev/null || true
             else
               LIST_TORRENT_FILE="$TORRENT_SOURCE"
             fi
