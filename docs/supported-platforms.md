@@ -15,6 +15,7 @@ Platform support depends on the selected workflow, source URL, available cookies
 | X / Twitter | Partial | No | No dedicated cookie secret | Generic only | Generic only | Generic workflow sets X referer but has no X cookies secret. |
 | Reddit | Partial | No | No dedicated cookie secret | Generic only | Generic only | Depends on embedded media availability and `yt-dlp` support. |
 | Direct downloadable file | Yes | No | Not needed | Possible if media | Yes | Best route for document mode. |
+| Magnet / `.torrent` | No | `torrent-document-local-api.yml` | Not needed | No | Yes | Admin-oriented torrent document workflow. Supports listing, selected indexes, all files, and split document parts. |
 | Generic media URL | Yes | No | No | Possible | Possible | Falls through to generic extraction/direct-download behavior. |
 
 ## Quality values
@@ -91,6 +92,24 @@ The generic workflow can:
 - send the original file,
 - wrap it in a ZIP,
 - split very large ZIP output into parts.
+
+
+## Torrent links
+
+Torrent links are handled by `torrent-document-local-api.yml`.
+
+Supported inputs:
+
+- magnet links,
+- direct `.torrent` URLs.
+
+Recommended flow:
+
+1. Run `file_mode=list` to inspect torrent contents.
+2. Run `file_mode=selected` with explicit indexes such as `1`, `1,2`, or `3-5`.
+3. Use `file_mode=all` only when every torrent file is intended.
+
+The workflow sends selected files as Telegram documents through Telegram Local Bot API and can split oversized files into ordered parts.
 
 ## Reliability expectations
 

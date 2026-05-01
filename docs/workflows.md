@@ -4,22 +4,25 @@ This document describes the behavior of each workflow.
 
 ## Capability matrix
 
-| Capability | `remote-media.yml` | `youtube-video-local-api.yml` | `tiktok-direct-local-api.yml` | `facebook-long-video-local-api.yml` |
-|---|:---:|:---:|:---:|:---:|
-| Manual `workflow_dispatch` | Yes | Yes | Yes | Yes |
-| Video output | Yes | Yes | Yes | Yes |
-| Document output | Yes | No | No | No |
-| `document_mode=zip` | Yes | No | No | No |
-| `document_mode=original` | Yes | No | No | No |
-| Split large ZIP into parts | Yes | No | No | No |
-| Progress message edits | Yes | Yes | Yes | Yes |
-| Public Bot API | Yes, for small files | No | No | No |
-| Local Bot API | Yes, when needed | Yes | Yes | Yes |
-| YouTube cookies | Yes | Yes | No | No |
-| Facebook cookies | Yes | No | No | Yes |
-| TikTok third-party resolver | No | No | Yes | No |
-| Telegram/iPhone video preparation | Yes | Yes | Yes, simpler codec/audio check | Yes |
-| Size-fit recompression | Yes | No | No | No |
+| Capability | `remote-media.yml` | `youtube-video-local-api.yml` | `tiktok-direct-local-api.yml` | `facebook-long-video-local-api.yml` | `torrent-document-local-api.yml` |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Manual `workflow_dispatch` | Yes | Yes | Yes | Yes | Yes |
+| Video output | Yes | Yes | Yes | Yes | No |
+| Document output | Yes | No | No | No | Yes |
+| `document_mode=zip` | Yes | No | No | No | No |
+| `document_mode=original` | Yes | No | No | No | No |
+| Split large ZIP into parts | Yes | No | No | No | No |
+| Split large documents into parts | Yes | No | No | No | Yes |
+| Torrent file listing | No | No | No | No | Yes |
+| Selected torrent indexes | No | No | No | No | Yes |
+| Progress message edits | Yes | Yes | Yes | Yes | Yes |
+| Public Bot API | Yes, for small files | No | No | No | No |
+| Local Bot API | Yes, when needed | Yes | Yes | Yes | Yes |
+| YouTube cookies | Yes | Yes | No | No | No |
+| Facebook cookies | Yes | No | No | Yes | No |
+| TikTok third-party resolver | No | No | Yes | No | No |
+| Telegram/iPhone video preparation | Yes | Yes | Yes, simpler codec/audio check | Yes | No |
+| Size-fit recompression | Yes | No | No | No | No |
 
 ## `remote-media.yml`
 
@@ -151,6 +154,59 @@ The generic workflow includes document-send retry handling for retryable Telegra
 - `504`.
 
 For `429`, it tries to honor `retry_after` from Telegram when present, within a bounded wait window.
+
+
+## `torrent-document-local-api.yml`
+
+### Purpose
+
+Admin-oriented torrent document workflow for:
+
+- magnet links,
+- direct `.torrent` URLs,
+- listing torrent contents before download,
+- downloading selected torrent file indexes,
+- downloading all torrent files when explicitly requested,
+- sending files to Telegram as documents through Telegram Local Bot API,
+- splitting oversized documents into ordered Telegram-safe parts.
+
+### Inputs
+
+| Input | Required | Default | Accepted values / behavior |
+|---|:---:|---|---|
+| `torrent_url` | Yes | none | Magnet link or direct `.torrent` URL. |
+| `file_mode` | No | `list` | `list`, `selected`, or `all`. Invalid values fall back to `list`. |
+| `selected_files` | Required for `selected` | empty | File indexes such as `1`, `1,2`, `3-5`, or `1-3,5`. |
+| `split_part_mib` | No | `1900` | Split size in MiB. Values are clamped to a safe range. |
+| `progress_chat_id` | No | empty | Progress message chat ID. |
+| `progress_message_id` | No | empty | Progress message ID. |
+| `dispatch_key` | No | `manual` | Caller tracking key; masked in logs and not exposed in the run name. |
+
+### Modes
+
+#### `file_mode=list`
+
+Fetches torrent metadata and sends a Telegram message listing torrent files grouped by folder. No torrent content is downloaded.
+
+#### `file_mode=selected`
+
+Downloads and sends only the selected file indexes. Ranges such as `3-5` are expanded before dispatching to `aria2c`, and the final send manifest is built only from the selected indexes.
+
+#### `file_mode=all`
+
+Downloads and sends all torrent files.
+
+### Upload behavior
+
+The workflow sends files through Telegram Local Bot API as documents. If a selected file is larger than the single-file limit used by the workflow, it is split into ordered parts and each part is sent as a Telegram document.
+
+### Safety behavior
+
+The workflow masks torrent URLs, selected indexes, file paths, hashes, sizes, Telegram secrets, and raw response details from GitHub logs where possible. File names and sizes are intentionally shown only in the Telegram `list` message so the admin can choose indexes.
+
+### Notes
+
+This workflow is intended for controlled/admin use. Bot integrations should validate access before allowing magnet or `.torrent` dispatch.
 
 ## `youtube-video-local-api.yml`
 
@@ -356,3 +412,5 @@ Fails if the prepared file is empty or larger than `2,000,000,000` bytes.
 - Dedicated workflows duplicate helper logic instead of sharing common scripts.
 - The generic workflow handles more cases but is larger and more complex.
 - Platform extraction depends on upstream websites and `yt-dlp` behavior.
+- Torrent delivery is document-only and does not perform media conversion or Telegram/iPhone video compatibility preparation.
+- Torrent file availability depends on peers, trackers, DHT behavior, and GitHub Actions runtime limits.

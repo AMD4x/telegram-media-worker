@@ -30,6 +30,7 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
 | Direct file URL as Telegram document | `remote-media.yml` |
 | Unknown platform video | `remote-media.yml` |
 | Instagram/X/Reddit | `remote-media.yml` |
+| Magnet link or direct `.torrent` URL | `torrent-document-local-api.yml` |
 
 ## Inputs to send
 
@@ -111,6 +112,39 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
 }
 ```
 
+
+### Torrent list request
+
+```json
+{
+  "ref": "main",
+  "inputs": {
+    "torrent_url": "magnet:?xt=urn:btih:...",
+    "file_mode": "list",
+    "progress_chat_id": "123456789",
+    "progress_message_id": "60",
+    "dispatch_key": "123456789-60-abcd"
+  }
+}
+```
+
+### Torrent selected files request
+
+```json
+{
+  "ref": "main",
+  "inputs": {
+    "torrent_url": "magnet:?xt=urn:btih:...",
+    "file_mode": "selected",
+    "selected_files": "1,2",
+    "split_part_mib": "1900",
+    "progress_chat_id": "123456789",
+    "progress_message_id": "61",
+    "dispatch_key": "123456789-61-abcd"
+  }
+}
+```
+
 ## Dispatch endpoint
 
 Use GitHub REST API:
@@ -126,6 +160,7 @@ remote-media.yml
 youtube-video-local-api.yml
 tiktok-direct-local-api.yml
 facebook-long-video-local-api.yml
+torrent-document-local-api.yml
 ```
 
 ## `dispatch_key`
@@ -136,7 +171,9 @@ Use a unique key per task. Recommended format:
 <chat_id>-<message_id>-<random_suffix>
 ```
 
-The workflows include the key in `run-name`, which helps the bot match a run to a user task.
+Most workflows include the key in `run-name`, which helps the bot match a run to a user task.
+
+`torrent-document-local-api.yml` intentionally does not expose `dispatch_key` in `run-name`. Bot integrations should match torrent runs by workflow file, dispatch time, branch, event type, and recent run ordering, while keeping `dispatch_key` private.
 
 ## Finding the matching run
 
@@ -144,7 +181,7 @@ After dispatching, GitHub's dispatch endpoint does not directly return the run I
 
 1. record the dispatch time,
 2. list recent workflow runs for that workflow,
-3. match by branch, event type, created time, and `dispatch_key` in the run name,
+3. match by branch, event type, created time, and `dispatch_key` in the run name when available,
 4. store the run ID.
 
 ## Progress message requirements
@@ -185,12 +222,13 @@ Use only with `remote-media.yml`.
 Reject or sanitize before dispatch:
 
 - empty URL,
-- non-HTTP/HTTPS schemes,
+- non-HTTP/HTTPS schemes, except `magnet:` for the admin-only torrent path,
 - extremely long input,
 - known malicious or unsupported domains,
 - local/private network URLs if the bot accepts arbitrary links,
 - suspicious output filenames,
-- attempts to place secrets in filenames or URLs.
+- attempts to place secrets in filenames or URLs,
+- torrent requests from non-admin users.
 
 ## Bot-side reliability recommendations
 
