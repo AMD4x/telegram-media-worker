@@ -1,45 +1,34 @@
 # Roadmap
 
-This roadmap lists possible future improvements. It does not imply that the current workflows need to be changed immediately.
+## Current state
 
-## v0.1 — Documentation and public usage
+The project is functionally complete. All four workflow families are working.
+The Docker image rebuilds automatically when yt-dlp or Deno release updates.
 
-- ✅ Add README.
-- ✅ Add security notes.
-- ✅ Add secrets guide.
-- ✅ Add troubleshooting guide.
-- ✅ Add examples for common workflow inputs.
+## Known limitations
 
-## v0.2 — Better user-facing packaging
+- progress_bar(), update_progress(), and update_completed() are duplicated
+  inline across the three dedicated platform workflows. This is intentional
+  for now to keep each workflow fully self-contained.
 
-- ✅ Add clear repository description and topics.
-- ✅ Add GitHub releases.
-- ✅ Add changelog discipline.
-- ✅ Add issue and pull request templates.
+- Instagram, X/Twitter, and Reddit fall through to the generic remote-media
+  path. Cookie support for these platforms is not wired in.
 
-## v0.3 — Safer workflow interface
+- The TikTok workflow includes a tikwm.com fallback path. This is a
+  third-party service and may stop working without notice.
 
-- Add optional `payload_json` input while preserving existing inputs.
-- Add stricter input validation.
-- Add private/sanitized logging mode.
-- Add consistent output summaries across workflows.
+- Dedicated platform workflows do not support document_mode. Only the
+  generic remote-media workflow handles document and ZIP output.
 
-## v0.4 — Additional output modes
+- All workflows are trigger-only via workflow_dispatch. There is no
+  workflow_call interface for composability.
 
-- Add artifact-only output mode.
-- Add optional S3/R2-compatible upload mode.
-- Add result manifest JSON.
-- Add output checksum metadata.
+## Possible future additions
 
-## v0.5 — Code organization
+These are not scheduled. They are here only to record known gaps.
 
-- Move large inline Bash blocks into versioned worker scripts.
-- Add shared libraries for progress, Telegram sending, ffmpeg, yt-dlp, and input sanitation.
-- Keep existing workflow names stable for backward compatibility.
-
-## v1.0 — Stable public worker
-
-- Freeze a public input contract.
-- Publish tagged releases.
-- Provide reusable GitHub Action usage.
-- Provide documented bot integration examples.
+- Add INSTAGRAM_COOKIES_TXT and X_COOKIES_TXT handling to remote-media.yml.
+- Add workflow_call support to allow one workflow to call another.
+- Replace or remove tikwm fallback if it becomes unreliable.
+- Consider a shared script file for the progress helpers if duplication
+  becomes a maintenance problem.
