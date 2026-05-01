@@ -2,7 +2,7 @@
 
 ## Current state
 
-The project is functionally complete. All four workflow families are working.
+The project is functionally complete. All five workflow families are working.
 The Docker image rebuilds automatically when yt-dlp or Deno release updates.
 
 ## Known limitations
@@ -19,6 +19,9 @@ The Docker image rebuilds automatically when yt-dlp or Deno release updates.
 
 - Dedicated platform workflows do not support document_mode. Only the
   generic remote-media workflow handles document and ZIP output.
+
+- AMD4x Merge is an optional user-side Windows restore helper only. It
+  does not change workflow behavior, upload limits, secrets, or inputs.
 
 - All workflows are trigger-only via workflow_dispatch. There is no
   workflow_call interface for composability.
