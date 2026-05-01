@@ -1,5 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Security issue
-    url: https://github.com/AD4x/telegram-media-worker/security
-    about: Do not report tokens, cookies, or private URLs in public issues.
