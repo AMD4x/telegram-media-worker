@@ -110,7 +110,6 @@ All four workflow families are working and functionally complete. The Docker ima
 Known limitations include duplicated progress helpers across platform workflows, no `workflow_call` interface, and no `document_mode` support in dedicated platform workflows. Instagram, X/Twitter, and Reddit fall through to the generic remote-media path without dedicated cookie support.
 
 Possible future additions are tracked in [`ROADMAP.md`](ROADMAP.md).
-See [`ROADMAP.md`](ROADMAP.md).
 
 ## License
 
