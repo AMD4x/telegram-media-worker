@@ -898,7 +898,7 @@ jobs:
 
             if printf "%s" "$LOWER_TORRENT_URL" | grep -q '^magnet:'; then
               set +e
-              aria2c \
+              timeout 240s aria2c \
                 --dir="$LIST_DIR" \
                 --bt-metadata-only=true \
                 --bt-save-metadata=true \
@@ -908,6 +908,7 @@ jobs:
                 --disable-ipv6=true \
                 --enable-dht=false \
                 --enable-dht6=false \
+                --bt-stop-timeout=180 \
                 --summary-interval=0 \
                 --console-log-level=warn \
                 "$TORRENT_SOURCE" > "$LIST_FETCH_LOG" 2>&1
@@ -1055,7 +1056,6 @@ jobs:
             display_name="$(sanitize_filename "" "$original_name")"
 
             file_size="$(stat -c%s "$file_path" 2>/dev/null || echo 0)"
-            file_size_text="$(format_bytes_for_telegram "$file_size")"
 
             echo "TORRENT_CURRENT_FILE=masked"
             echo "::add-mask::${file_size}"
@@ -1083,6 +1083,9 @@ jobs:
 
           progress_stage "completed" "100" "Completed" "Torrent_document_completed"
 
-          send_notice \
-            "✅ Torrent completed" \
-            "Downloaded and sent torrent document(s).\nMode: ${FILE_MODE}\nSent items: ${TOTAL_SENT_FILES}\nRun: ${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-unknown}"
+          final_notice_body=""
+          final_run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-unknown}"
+
+          printf -v final_notice_body 'Downloaded and sent torrent document(s).\nMode: %s\nSent items: %s\nRun: %s' "$FILE_MODE" "$TOTAL_SENT_FILES" "$final_run_url"
+
+          send_notice "✅ Torrent completed" "$final_notice_body"
