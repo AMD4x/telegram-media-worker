@@ -746,9 +746,17 @@ jobs:
           echo "LOCAL_BOT_API_MAX_BYTES=masked"
           echo "SPLIT_PART_BYTES=masked"
 
-          echo "::add-mask::${TORRENT_URL}"
-          echo "::add-mask::${SELECTED_FILES}"
-          echo "::add-mask::${SPLIT_PART_MIB}"
+          if [ -n "${TORRENT_URL:-}" ]; then
+            echo "::add-mask::${TORRENT_URL}"
+          fi
+
+          if [ -n "${SELECTED_FILES:-}" ]; then
+            echo "::add-mask::${SELECTED_FILES}"
+          fi
+
+          if [ -n "${SPLIT_PART_MIB:-}" ]; then
+            echo "::add-mask::${SPLIT_PART_MIB}"
+          fi
 
           if [ -n "${PROGRESS_CHAT_ID:-}" ]; then
             echo "::add-mask::${PROGRESS_CHAT_ID}"
