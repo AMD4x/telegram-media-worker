@@ -4,7 +4,7 @@ All notable changes to this repository can be documented in this file.
 
 The format loosely follows "Keep a Changelog" style, with simple sections for Added, Changed, Fixed, and Security.
 
-## Unreleased
+## [v0.2.0] — 2025-05-01
 
 ### Added
 
@@ -16,6 +16,7 @@ The format loosely follows "Keep a Changelog" style, with simple sections for Ad
 - Bot integration notes.
 - Example workflow input payloads.
 - Issue and pull request templates.
+- Repository description and topic tags.
 
 ### Changed
 
@@ -26,3 +27,7 @@ The format loosely follows "Keep a Changelog" style, with simple sections for Ad
 ### Security
 
 - Added guidance for handling Telegram tokens, Telegram API credentials, cookies, private URLs, and sanitized logs.
+
+## Unreleased
+
+_(nothing pending)_
