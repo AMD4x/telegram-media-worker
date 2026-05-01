@@ -907,12 +907,13 @@ jobs:
                 --seed-ratio=0.0 \
                 --max-overall-upload-limit=1K \
                 --disable-ipv6=true \
-                --enable-dht=false \
+                --enable-dht=true \
                 --enable-dht6=false \
+                --dht-file-path="$RUNNER_TEMP/aria2-dht-list.dat" \
                 --bt-stop-timeout=180 \
                 --summary-interval=0 \
                 --console-log-level=warn \
-                "$TORRENT_SOURCE" > "$LIST_FETCH_LOG" 2>&1 &
+                "$TORRENT_SOURCE" > "$LIST_FETCH_LOG" 2>&1
 
               ARIA2_METADATA_PID="$!"
               ARIA2_METADATA_WAIT_SECONDS=0
