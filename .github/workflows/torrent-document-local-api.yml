@@ -9,21 +9,16 @@ on:
         required: true
         type: string
       file_mode:
-        description: "Which downloaded files to send"
+        description: "Choose list first, selected for specific files, or all for everything"
         required: false
-        default: "largest"
+        default: "list"
         type: choice
         options:
           - "list"
-          - "largest"
           - "selected"
           - "all"
       selected_files:
         description: "Torrent file indexes to download, e.g. 1 or 1,3 or 1-4. Used when file_mode=selected."
-        required: false
-        type: string
-      output_filename:
-        description: "Optional filename when file_mode=largest"
         required: false
         type: string
       split_part_mib:
@@ -71,7 +66,6 @@ jobs:
           TORRENT_URL_INPUT: ${{ inputs.torrent_url }}
           FILE_MODE_INPUT: ${{ inputs.file_mode }}
           SELECTED_FILES_INPUT: ${{ inputs.selected_files }}
-          OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
           SPLIT_PART_MIB_INPUT: ${{ inputs.split_part_mib }}
           PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
           PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
@@ -88,7 +82,6 @@ jobs:
           TORRENT_URL="${TORRENT_URL_INPUT:-}"
           FILE_MODE="${FILE_MODE_INPUT:-largest}"
           SELECTED_FILES="${SELECTED_FILES_INPUT:-}"
-          OUTPUT_FILENAME="${OUTPUT_FILENAME_INPUT:-}"
           SPLIT_PART_MIB="${SPLIT_PART_MIB_INPUT:-1900}"
 
           LOCAL_BOT_API_MAX_BYTES="2000000000"
@@ -96,10 +89,10 @@ jobs:
           TELEGRAM_BOT_API_PID=""
 
           case "$FILE_MODE" in
-            list|largest|selected|all)
+            list|selected|all)
               ;;
             *)
-              FILE_MODE="largest"
+              FILE_MODE="list"
               ;;
           esac
 
@@ -152,10 +145,6 @@ jobs:
           echo "::add-mask::$TELEGRAM_CHAT_ID"
           echo "::add-mask::$TELEGRAM_API_ID"
           echo "::add-mask::$TELEGRAM_API_HASH"
-
-          if [ -n "${OUTPUT_FILENAME:-}" ]; then
-            echo "::add-mask::$OUTPUT_FILENAME"
-          fi
 
           if [ -n "${PROGRESS_CHAT_ID:-}" ]; then
             echo "::add-mask::$PROGRESS_CHAT_ID"
@@ -577,15 +566,13 @@ jobs:
                 --seed-ratio=0.0 \
                 --max-overall-upload-limit=1K \
                 --disable-ipv6=true \
-                --dht-file-path="$RUNNER_TEMP/aria2-dht-list.dat" \
+                --enable-dht=false \
+                --enable-dht6=false \
                 --summary-interval=0 \
                 --console-log-level=warn \
                 "$TORRENT_SOURCE" || true
 
               LIST_TORRENT_FILE="$(find "$LIST_DIR" "$RUNNER_TEMP" "$PWD" -type f -name "*.torrent" -printf "%T@ %p\n" 2>/dev/null | sort -nr | head -n 1 | cut -d " " -f2- || true)"
-              echo "LIST_TORRENT_FILE=${LIST_TORRENT_FILE:-not_found}"
-              echo "Torrent metadata files found:"
-              find "$LIST_DIR" "$RUNNER_TEMP" "$PWD" -type f -name "*.torrent" -printf "%p\n" 2>/dev/null || true
             else
               LIST_TORRENT_FILE="$TORRENT_SOURCE"
             fi
@@ -596,10 +583,6 @@ jobs:
             fi
 
             aria2c -S "$LIST_TORRENT_FILE" > "$LIST_LOG" 2>&1 || true
-
-            echo "===== TORRENT FILE LIST RAW BEGIN ====="
-            cat "$LIST_LOG" || true
-            echo "===== TORRENT FILE LIST RAW END ====="
 
             if [ ! -s "$LIST_LOG" ]; then
               echo "ERROR: Torrent file list is empty."
@@ -659,7 +642,8 @@ jobs:
             --seed-ratio=0.0 \
             --max-overall-upload-limit=1K \
             --disable-ipv6=true \
-            --dht-file-path="$RUNNER_TEMP/aria2-dht.dat" \
+            --enable-dht=false \
+            --enable-dht6=false \
             --follow-torrent=mem \
             --bt-stop-timeout=300 \
             --bt-max-peers=80 \
@@ -678,16 +662,9 @@ jobs:
 
           rm -f "$MANIFEST"
 
-          if [ "$FILE_MODE" = "largest" ]; then
-            find "$DOWNLOAD_DIR" -type f ! -name "*.aria2" -printf "%s\t%p\n" \
-              | sort -nr \
-              | head -n 1 \
-              | cut -f2- > "$MANIFEST"
-          else
-            find "$DOWNLOAD_DIR" -type f ! -name "*.aria2" -printf "%s\t%p\n" \
-              | sort -nr \
-              | cut -f2- > "$MANIFEST"
-          fi
+          find "$DOWNLOAD_DIR" -type f ! -name "*.aria2" -printf "%s\t%p\n" \
+            | sort -nr \
+            | cut -f2- > "$MANIFEST"
 
           if [ ! -s "$MANIFEST" ]; then
             echo "ERROR: No downloaded files were found."
@@ -709,11 +686,7 @@ jobs:
 
             original_name="$(basename "$file_path")"
 
-            if [ "$FILE_MODE" = "largest" ] && [ -n "${OUTPUT_FILENAME:-}" ]; then
-              display_name="$(sanitize_filename "$OUTPUT_FILENAME" "$original_name")"
-            else
-              display_name="$(sanitize_filename "" "$original_name")"
-            fi
+            display_name="$(sanitize_filename "" "$original_name")"
 
             file_size="$(stat -c%s "$file_path" 2>/dev/null || echo 0)"
             file_size_text="$(format_bytes "$file_size")"
