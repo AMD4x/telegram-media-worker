@@ -1418,6 +1418,11 @@ jobs:
 
           progress_stage "sent" "98" "Finalizing" "Telegram_document_send_completed"
 
+          echo "PROGRESS_STAGE=completed"
+          echo "PROGRESS_PERCENT=100"
+          echo "PROGRESS_LABEL=Completed"
+          echo "PROGRESS_DETAIL=Torrent_document_completed"
+
           telegram_edit_torrent_summary \
             "✅ <b>GitHub Torrent completed</b>" \
             "" \
@@ -1425,8 +1430,6 @@ jobs:
             "${LAST_SEND_MODE:-local}" \
             "${LAST_SEND_METHOD:-Document}" \
             "${TOTAL_SENT_FILES:-0}"
-
-          progress_stage "completed" "100" "Completed" "Torrent_document_completed"
 
           final_notice_body=""
           final_run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-unknown}"
