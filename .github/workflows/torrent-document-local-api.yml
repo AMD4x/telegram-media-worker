@@ -1,5 +1,5 @@
 name: Torrent To Telegram Document Local API
-run-name: "AMD4x Torrent ${{ inputs.dispatch_key }} · ${{ inputs.file_mode }}"
+run-name: "AMD4x Torrent · ${{ inputs.file_mode }}"
 
 on:
   workflow_dispatch:
@@ -922,10 +922,13 @@ jobs:
               ARIA2_METADATA_WAIT_SECONDS=0
 
               while kill -0 "$ARIA2_METADATA_PID" >/dev/null 2>&1; do
-                sleep 20
-                ARIA2_METADATA_WAIT_SECONDS="$((ARIA2_METADATA_WAIT_SECONDS + 20))"
-                echo "ARIA2_METADATA_WAIT_SECONDS=masked"
-                progress_stage "listing_files" "25" "Listing" "Fetching_torrent_file_list"
+                sleep 5
+                ARIA2_METADATA_WAIT_SECONDS="$((ARIA2_METADATA_WAIT_SECONDS + 5))"
+
+                if [ "$((ARIA2_METADATA_WAIT_SECONDS % 20))" -eq 0 ]; then
+                  echo "ARIA2_METADATA_WAIT_SECONDS=masked"
+                  progress_stage "listing_files" "25" "Listing" "Fetching_torrent_file_list"
+                fi
               done
 
               wait "$ARIA2_METADATA_PID"
