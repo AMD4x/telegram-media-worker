@@ -365,7 +365,7 @@ jobs:
           }
 
           safe_upload_filename() {
-            local requested="$1"
+            local requested="${1:-}"
             local idx="${2:-file}"
             local original_name=""
             local name=""
@@ -711,11 +711,12 @@ jobs:
             echo "TELEGRAM_SEND_METHOD=document"
           }
 
-            local file_path="$1"
-            local display_name="$2"
-            local caption_prefix="$3"
-            local file_index="$4"
-            local files_total="$5"
+          send_large_file_as_parts() {
+            local file_path="${1:-}"
+            local display_name="${2:-}"
+            local caption_prefix="${3:-}"
+            local file_index="${4:-1}"
+            local files_total="${5:-1}"
 
             local file_size=""
             local file_size_text=""
