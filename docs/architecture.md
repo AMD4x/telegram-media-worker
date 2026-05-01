@@ -121,7 +121,7 @@ The workflow waits for the local server to respond before upload. If it does not
 `remote-media.yml` uses these effective size constants:
 
 | Constant | Value | Meaning |
-|---|---:|---|
+|---|:---:|---|
 | `DIRECT_TELEGRAM_MAX_BYTES` | `50,000,000` | Small-file threshold for Public Bot API. |
 | `LOCAL_BOT_API_MAX_BYTES` | `2,000,000,000` | Effective Local Bot API upload ceiling used by workflows. |
 | `DOCUMENT_SPLIT_PART_BYTES` | `1,850,000,000` | Target size for split ZIP parts. |

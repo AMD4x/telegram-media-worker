@@ -5,7 +5,7 @@ This document describes the behavior of each workflow.
 ## Capability matrix
 
 | Capability | `remote-media.yml` | `youtube-video-local-api.yml` | `tiktok-direct-local-api.yml` | `facebook-long-video-local-api.yml` |
-|---|---:|---:|---:|---:|
+|---|:---:|:---:|:---:|:---:|
 | Manual `workflow_dispatch` | Yes | Yes | Yes | Yes |
 | Video output | Yes | Yes | Yes | Yes |
 | Document output | Yes | No | No | No |
@@ -38,7 +38,7 @@ Generic worker for:
 ### Inputs
 
 | Input | Required | Default | Accepted values / behavior |
-|---|---:|---|---|
+|---|:---:|---|---|
 | `media_url` | Yes | none | Source media or file URL. |
 | `max_height` | Yes | `auto` | `auto`, `2160`, `1440`, `1080`, `720`, `480`, `360`. |
 | `send_as` | Yes | `video` | `video` or `document`; invalid values become `video`. |

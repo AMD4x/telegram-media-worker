@@ -5,7 +5,7 @@ Platform support depends on the selected workflow, source URL, available cookies
 ## Support matrix
 
 | Platform / URL type | Generic `remote-media.yml` | Dedicated workflow | Cookies supported by repo | Video output | Document output | Notes |
-|---|---:|---:|---:|---:|---:|---|
+|---|:---:|:---:|:---:|:---:|:---:|---|
 | YouTube | Yes | `youtube-video-local-api.yml` | `YOUTUBE_COOKIES_TXT` | Yes | Generic only | Generic workflow normalizes YouTube URLs. Dedicated workflow prepares Telegram/iPhone-safe video. |
 | YouTube Shorts | Yes | `youtube-video-local-api.yml` | `YOUTUBE_COOKIES_TXT` | Yes | Generic only | Generic workflow can normalize Shorts URLs to a watch URL. |
 | YouTube Music | Not explicitly detected in generic YouTube test | `youtube-video-local-api.yml` accepts it | `YOUTUBE_COOKIES_TXT` | Dedicated only | Generic may still try through generic path | Dedicated workflow validates `music.youtube.com`. |
