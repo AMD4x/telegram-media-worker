@@ -176,6 +176,19 @@ Options:
 - reduce source quality,
 - add size-fit behavior to the dedicated workflow if needed.
 
+## I received split parts and cannot open them on Windows
+
+Split files such as `.part001`, `.part002`, `.001`, and `.002` are ordered binary parts. They are not standalone media files and should not be extracted as ZIP/RAR archives.
+
+Fixes:
+
+- download every part,
+- keep all parts in the same folder,
+- join them in order with `copy /b`,
+- or install the optional Windows helper in `tools/windows/amd4x-merge/` and right-click the first part.
+
+AMD4x Merge is only a local restore helper. It does not change workflow execution or Telegram upload limits.
+
 ## Direct document download produces HTML
 
 The generic workflow rejects HTML pages in document mode. This usually means the URL is not a direct downloadable file.

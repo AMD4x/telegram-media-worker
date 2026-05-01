@@ -118,7 +118,7 @@ filename.ext.part001
 filename.ext.part002
 ```
 
-They are not ZIP/RAR archives. Download all parts and join them in order to restore the original file. On Windows, use `copy /b`; on Linux/macOS, use `cat *.part??? > output.ext`.
+They are not ZIP/RAR archives. Download all parts and join them in order to restore the original file. On Windows, use `copy /b` or the optional AMD4x Merge helper in `tools/windows/amd4x-merge/`; on Linux/macOS, use `cat *.part??? > output.ext`.
 
 ## Reliability expectations
 

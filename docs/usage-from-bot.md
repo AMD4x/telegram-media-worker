@@ -166,6 +166,28 @@ For many parts, include every part in order:
 copy /b "video.mp4.part001"+"video.mp4.part002"+"video.mp4.part003" "video.mp4"
 ```
 
+#### Optional Windows helper
+
+Windows users can also install the optional AMD4x Merge context-menu helper:
+
+```text
+tools/windows/amd4x-merge/install.reg
+```
+
+After installing it, put all split parts in the same folder, right-click the first part only, such as `.part001` or `.001`, then choose:
+
+```text
+[</> AMD4x Merge </>]
+```
+
+To remove the helper later, run:
+
+```text
+tools/windows/amd4x-merge/uninstall.reg
+```
+
+AMD4x Merge is a local Windows restore helper only. It does not change workflow execution, Telegram upload behavior, secrets, or workflow inputs.
+
 ### Joining split torrent parts on Linux or macOS
 
 If all parts are in the same folder and use the `.part001`, `.part002` pattern:

@@ -135,6 +135,16 @@ If a ZIP is larger than the configured split size, the workflow:
 5. Sends each part with `sendDocument`.
 6. Updates the progress summary.
 
+### Optional Windows restore helper for split ZIP parts
+
+When split ZIP parts such as `.001`, `.002`, and `.003` are downloaded on Windows, users can optionally install:
+
+```text
+tools/windows/amd4x-merge/install.reg
+```
+
+AMD4x Merge adds a Windows Explorer context-menu action for joining ordered split parts locally. This is only a user-side restore helper and does not affect the workflow runtime.
+
 ### Telegram send-mode selection
 
 - Files at or below the public threshold can use Public Bot API.
@@ -223,6 +233,14 @@ On Linux/macOS:
 ```bash
 cat *.part??? > filename.ext
 ```
+
+Optional Windows helper:
+
+```text
+tools/windows/amd4x-merge/
+```
+
+AMD4x Merge can be used from the Windows right-click menu to join ordered split parts such as `.part001` and `.001`. It is a local restore helper only; it does not change torrent workflow behavior, upload limits, secrets, or inputs.
 
 ### Safety behavior
 
