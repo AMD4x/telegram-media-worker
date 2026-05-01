@@ -1,0 +1,13 @@
+{
+  "workflow": "remote-media.yml",
+  "inputs": {
+    "media_url": "https://example.com/file-or-media-url",
+    "max_height": "auto",
+    "send_as": "document",
+    "output_filename": "telegram_document.zip",
+    "document_mode": "zip",
+    "progress_chat_id": "123456789",
+    "progress_message_id": "1004",
+    "dispatch_key": "manual-document-001"
+  }
+}
