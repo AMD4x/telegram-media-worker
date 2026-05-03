@@ -7,6 +7,7 @@ This directory contains helper scripts used by GitHub Actions workflows.
 | Directory | Purpose |
 |:---:|---|
 | `video_compress` | Scripts for the Video Compress workflow. |
+| `package_tools` | Scripts for Package Inspector / Repacker manifest building, encrypted manifest handoff, source staging, selected-item ZIP creation, split sending, and Telegram delivery. |
 
 ## Notes
 
