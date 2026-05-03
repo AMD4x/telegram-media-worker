@@ -124,28 +124,73 @@ def parse_aria2_show_files(text: str) -> list[dict[str, Any]]:
 def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
     warnings: list[str] = []
     work_dir.mkdir(parents=True, exist_ok=True)
-    if source_url.lower().startswith("magnet:?"):
-        cmd = [
+
+    source_lower = source_url.lower().strip()
+
+    if source_lower.startswith("magnet:?"):
+        metadata_cmd = [
             "aria2c",
-            "--show-files=true",
             "--bt-metadata-only=true",
             "--bt-save-metadata=true",
             "--summary-interval=0",
             "--allow-overwrite=true",
+            "--enable-dht=true",
+            "--enable-peer-exchange=true",
             "--dir",
             str(work_dir),
             source_url,
         ]
-    else:
-        torrent_file = work_dir / sanitize_filename(filename_from_url(source_url, "source.torrent"), "source.torrent")
-        download_file(source_url, torrent_file)
-        cmd = ["aria2c", "--show-files=true", "--summary-interval=0", str(torrent_file)]
-    result = run_cmd(cmd, cwd=work_dir, timeout=180, check=False)
+
+        metadata_result = run_cmd(metadata_cmd, cwd=work_dir, timeout=300, check=False)
+
+        torrent_files = sorted(
+            work_dir.glob("*.torrent"),
+            key=lambda path: path.stat().st_mtime if path.exists() else 0,
+            reverse=True,
+        )
+
+        if torrent_files:
+            show_cmd = [
+                "aria2c",
+                "--show-files=true",
+                "--summary-interval=0",
+                str(torrent_files[0]),
+            ]
+            show_result = run_cmd(show_cmd, cwd=work_dir, timeout=120, check=False)
+            items = parse_aria2_show_files(show_result.stdout)
+
+            if not items:
+                warnings.append("Torrent metadata was saved, but aria2c did not print a parsable file list.")
+
+            return items, warnings
+
+        items = parse_aria2_show_files(metadata_result.stdout)
+
+        if not items:
+            warnings.append("Could not fetch torrent metadata from this magnet link in time. Try again later or use a direct .torrent file.")
+
+        return items, warnings
+
+    torrent_file = work_dir / sanitize_filename(filename_from_url(source_url, "source.torrent"), "source.torrent")
+    download_file(source_url, torrent_file)
+
+    cmd = [
+        "aria2c",
+        "--show-files=true",
+        "--summary-interval=0",
+        str(torrent_file),
+    ]
+
+    result = run_cmd(cmd, cwd=work_dir, timeout=120, check=False)
+
     if result.returncode not in (0, 7):
         warnings.append("Torrent metadata inspection returned a non-zero exit code; parsed output may be incomplete.")
+
     items = parse_aria2_show_files(result.stdout)
+
     if not items:
-        warnings.append("Could not parse torrent file list from aria2c output. Magnet metadata may not have become available in time.")
+        warnings.append("Could not parse torrent file list from aria2c output.")
+
     return items, warnings
 
 
