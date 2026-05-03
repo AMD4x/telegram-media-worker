@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Shared helpers for Package Inspector / Repacker workflows."""
 
 from __future__ import annotations
