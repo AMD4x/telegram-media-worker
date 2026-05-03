@@ -212,6 +212,26 @@ This is expected. Dedicated workflows send video only.
 
 Use `remote-media.yml` for document output.
 
+## `PACKAGE_MANIFEST_KEY_MISSING=1`
+
+`package-inspect.yml` could not encrypt the package manifest because `PACKAGE_MANIFEST_KEY` is missing.
+
+Add the same long random `PACKAGE_MANIFEST_KEY` value to GitHub repository secrets and to the bot environment that decrypts package manifests.
+
+## Package Inspector completed but the bot did not receive a manifest
+
+Check:
+
+- `PACKAGE_MANIFEST_KEY` matches between GitHub and the bot,
+- `.package_manifests/<dispatch_key>.enc` was created,
+- the bot token used for GitHub API can read repository contents,
+- the bot deletes the `.enc` file only after successful decrypt/read,
+- the bot does not print manifest contents into public logs.
+
+## Package Inspector / Repacker renamed file is not at the top
+
+This is Package Browser bot-side UI behavior. Keep a rename-priority list in the bot state, move an original manifest path to the newest position after each rename, sort newest renamed items first, and remove the path when the rename is reset.
+
 ## Progress message does not update
 
 Check:

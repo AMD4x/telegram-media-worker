@@ -46,6 +46,7 @@ Required by:
 - `facebook-long-video-local-api.yml`,
 - `remote-media.yml` when a file is too large for Public Bot API and Local Bot API is needed.
 - `video-compress.yml` when the compressed output is too large for Public Bot API and Local Bot API is needed.
+- `package-repack.yml` when the output ZIP or split ZIP parts require Telegram Local Bot API.
 
 The workflows start Local Bot API with:
 
@@ -65,6 +66,16 @@ progress_message_id
 They let the workflow edit an existing Telegram message while the job runs.
 
 The progress message must have been sent by the same bot.
+
+## Package manifest encryption
+
+### `PACKAGE_MANIFEST_KEY`
+
+Required when a bot uses Package Inspector / Repacker and reads the generated `package-inspect.yml` manifest from `.package_manifests/`.
+
+The workflow encrypts `manifest.json` into `.package_manifests/<dispatch_key>.enc`. The bot must use the same key to decrypt the manifest, then delete the `.enc` file after successful read.
+
+Use a long random value and keep it only in repository secrets and the bot environment.
 
 ## Platform cookies
 
@@ -126,3 +137,9 @@ TELEGRAM_API_HASH
 ```
 
 For restricted platform content, add cookies as needed.
+
+For Package Inspector bot integration, also add:
+
+```text
+PACKAGE_MANIFEST_KEY
+```

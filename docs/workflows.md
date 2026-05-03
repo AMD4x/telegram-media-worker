@@ -4,27 +4,29 @@ This document describes the behavior of each workflow.
 
 ## Capability matrix
 
-| Capability | `remote-media.yml` | `youtube-video-local-api.yml` | `tiktok-direct-local-api.yml` | `facebook-long-video-local-api.yml` | `torrent-document-local-api.yml` | `video-compress.yml` |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Manual `workflow_dispatch` | yes | yes | yes | yes | yes | yes |
-| Video output | yes | yes | yes | yes | no | yes |
-| Document output | yes | no | no | no | yes | yes |
-| ZIP output | yes | no | no | no | no | yes |
-| `document_mode=zip` | yes | no | no | no | no | no |
-| `document_mode=original` | yes | no | no | no | no | no |
-| Split large ZIP into parts | yes | no | no | no | no | no |
-| Split large documents into parts | yes | no | no | no | yes | no |
-| Torrent file listing | no | no | no | no | yes | no |
-| Selected torrent indexes | no | no | no | no | yes | no |
-| Progress message edits | yes | yes | yes | yes | yes | yes |
-| Public Bot API | small files | no | no | no | small documents | small files |
-| Local Bot API | when needed | yes | yes | yes | yes | when needed |
-| YouTube cookies | yes | yes | no | no | no | yes |
-| Facebook cookies | yes | no | no | yes | no | yes |
-| TikTok third-party resolver | no | no | yes | no | no | no |
-| Telegram/iPhone video preparation | yes | yes | codec/audio check | yes | no | yes |
-| Size-fit recompression | yes | no | no | no | no | no |
-| User-selected compression strength | no | no | no | no | no | yes |
+| Capability | `remote-media.yml` | `youtube-video-local-api.yml` | `tiktok-direct-local-api.yml` | `facebook-long-video-local-api.yml` | `torrent-document-local-api.yml` | `package-inspect.yml` | `package-repack.yml` | `video-compress.yml` |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Manual `workflow_dispatch` | yes | yes | yes | yes | yes | yes | yes | yes |
+| Video output | yes | yes | yes | yes | no | no | no | yes |
+| Document output | yes | no | no | no | yes | optional report | ZIP document | yes |
+| ZIP output | yes | no | no | no | no | no | yes | yes |
+| `document_mode=zip` | yes | no | no | no | no | no | no | no |
+| `document_mode=original` | yes | no | no | no | no | no | no | no |
+| Split large ZIP into parts | yes | no | no | no | no | no | yes | no |
+| Split large documents into parts | yes | no | no | no | yes | no | yes | no |
+| Torrent file listing | no | no | no | no | yes | manifest only | via selected source | no |
+| Selected torrent indexes | no | no | no | no | yes | no | yes | no |
+| Package manifest generation | no | no | no | no | no | yes | no | no |
+| Package item rename map | no | no | no | no | no | no | yes | no |
+| Progress message edits | yes | yes | yes | yes | yes | yes | yes | yes |
+| Public Bot API | small files | no | no | no | small documents | optional report | small ZIPs | small files |
+| Local Bot API | when needed | yes | yes | yes | yes | no | when needed | when needed |
+| YouTube cookies | yes | yes | no | no | no | no | no | yes |
+| Facebook cookies | yes | no | no | yes | no | no | no | yes |
+| TikTok third-party resolver | no | no | yes | no | no | no | no | no |
+| Telegram/iPhone video preparation | yes | yes | codec/audio check | yes | no | no | no | yes |
+| Size-fit recompression | yes | no | no | no | no | no | no | no |
+| User-selected compression strength | no | no | no | no | no | no | no | yes |
 
 ## `remote-media.yml`
 
@@ -251,6 +253,63 @@ The workflow masks torrent URLs, selected indexes, file paths, hashes, sizes, Te
 ### Notes
 
 This workflow is intended for controlled/admin use. Bot integrations should validate access before allowing magnet or `.torrent` dispatch.
+
+
+## `package-inspect.yml`
+
+### Purpose
+
+Package source inspector used by bot-side Package Browser integrations. It reads a package-like source, creates a manifest of items and stable indexes, encrypts the manifest, and stores it temporarily in `.package_manifests/<dispatch_key>.enc` for the bot to read.
+
+### Inputs
+
+| Input | Required | Default | Behavior |
+|:---:|:---:|:---:|---|
+| `source_url` | yes | - | Archive, direct file, torrent, magnet, directory listing, or URL list to inspect. |
+| `progress_chat_id` | no | empty | Progress-message chat. |
+| `progress_message_id` | no | empty | Existing progress message to edit. |
+| `dispatch_key` | no | `manual` | Bot-side tracking key and encrypted-manifest filename seed. |
+| `send_telegram` | no | `true` | Sends a compact Telegram inspection report when enabled. |
+
+### Manifest behavior
+
+- Builds a `manifest.json` with stable 1-based item indexes.
+- Encrypts the manifest using `PACKAGE_MANIFEST_KEY`.
+- Publishes only the encrypted `.enc` manifest under `.package_manifests/`.
+- Prints only generic completion markers such as `PACKAGE_INSPECT_COMPLETED` and `MANIFEST_STORE_OK=1`.
+
+### Bot behavior
+
+The bot should decrypt the `.enc` manifest, show Package Browser, then delete the encrypted manifest after a successful read. Package Inspector / Repacker bot integrations can keep the newest renamed file at the top of long Package Browser lists by storing rename priority in bot-side state.
+
+## `package-repack.yml`
+
+### Purpose
+
+Package item repacker used after `package-inspect.yml`. It rebuilds a ZIP from selected manifest indexes, optional delete indexes, and optional internal rename mappings, then sends the output ZIP to Telegram.
+
+### Inputs
+
+| Input | Required | Default | Behavior |
+|:---:|:---:|:---:|---|
+| `source_url` | yes | - | Same original source URL used by Package Inspector. |
+| `keep_indexes` | no | empty | Manifest indexes to include, e.g. `1`, `1,2`, or `3-5`. |
+| `delete_indexes` | no | empty | Manifest indexes to exclude when `keep_indexes` is empty. |
+| `rename_map_json` | no | empty | JSON mapping of original manifest paths to new relative ZIP paths. |
+| `output_filename` | no | `package_output.zip` | Final ZIP filename. `.zip` is normalized by the worker. |
+| `split_part_mib` | no | `1900` | Split size in MiB for oversized ZIP output. |
+| `progress_chat_id` | no | empty | Progress-message chat. |
+| `progress_message_id` | no | empty | Existing progress message to edit. |
+| `dispatch_key` | no | `manual` | Bot-side tracking key. |
+| `send_telegram` | no | `true` | Sends output ZIP to Telegram when enabled. |
+
+### Rename behavior
+
+`rename_map_json` is the only rename data consumed by the workflow. Bot-side Package Browser ordering is not sent to GitHub; it only keeps the newest renamed item visible at the top of long lists before the final repack request.
+
+### Upload behavior
+
+The output is a ZIP document. Small ZIP output can use Public Bot API. Larger ZIPs or split ZIP parts can use Telegram Local Bot API when `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` are configured.
 
 ## `youtube-video-local-api.yml`
 
@@ -503,5 +562,7 @@ When `output_filename` is provided, the extension is normalized to `.mp4` for `v
 - The generic workflow handles more cases but is larger and more complex.
 - Platform extraction depends on upstream websites and `yt-dlp` behavior.
 - Torrent delivery is document-only and does not perform media conversion or Telegram/iPhone video compatibility preparation.
+- Package Inspector / Repacker is ZIP/document-oriented and does not perform media conversion or Telegram/iPhone video compatibility preparation.
+- Package Browser ordering for renamed items is bot-side state inside the Package Inspector / Repacker integration and is not a workflow input.
 - Torrent split parts are raw binary chunks, not ZIP/RAR archives; users must join all parts in order to restore the original file.
 - Torrent file availability depends on peers, trackers, DHT behavior, and GitHub Actions runtime limits.

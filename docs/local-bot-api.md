@@ -2,7 +2,7 @@
 
 Some workflows start Telegram Bot API in local mode inside the GitHub Actions job container.
 
-This is useful for large uploads and for direct interaction with a local endpoint during the workflow run.
+This is useful for large uploads and for direct interaction with a local endpoint during the workflow run. The Package Inspector / Repacker flow uses it during the repack step when the output ZIP or split ZIP parts exceed Public Bot API limits.
 
 ## Required secrets
 

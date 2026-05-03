@@ -32,6 +32,7 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
 | Compress a video before Telegram delivery | `video-compress.yml` |
 | Instagram/X/Reddit | `remote-media.yml` or `video-compress.yml` when compression is required |
 | Magnet link or direct `.torrent` URL | `torrent-document-local-api.yml` |
+| Inspect and repack archive/package source | `package-inspect.yml`, then `package-repack.yml` |
 
 ## Inputs to send
 
@@ -167,6 +168,54 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
 }
 ```
 
+### Package inspect request
+
+```json
+{
+  "ref": "main",
+  "inputs": {
+    "source_url": "https://example.com/archive.zip",
+    "progress_chat_id": "123456789",
+    "progress_message_id": "63",
+    "dispatch_key": "123456789-63-pkg",
+    "send_telegram": "false"
+  }
+}
+```
+
+The bot should read `.package_manifests/<dispatch_key>.enc`, decrypt it with `PACKAGE_MANIFEST_KEY`, build the Package Browser UI, then delete the encrypted manifest after successful read.
+
+### Package repack request
+
+```json
+{
+  "ref": "main",
+  "inputs": {
+    "source_url": "https://example.com/archive.zip",
+    "keep_indexes": "1,2,5-7",
+    "delete_indexes": "",
+    "rename_map_json": "{\"folder/old.pdf\":\"folder/new.pdf\"}",
+    "output_filename": "package_output.zip",
+    "split_part_mib": "1900",
+    "progress_chat_id": "123456789",
+    "progress_message_id": "64",
+    "dispatch_key": "123456789-64-repack",
+    "send_telegram": "true"
+  }
+}
+```
+
+### Package Inspector / Repacker browser ordering
+
+After `package-inspect.yml` returns the encrypted manifest, the bot displays Package Browser. For long Package Browser lists, keep rename ordering in bot-side state:
+
+1. When a selected file is renamed, add its original manifest path to a rename-priority list.
+2. If the same file is renamed again, move it to the newest position.
+3. Sort the current folder with the newest renamed file first, then older renamed files, then unchanged files.
+4. When a file rename is reset, remove that original path from the priority list.
+
+This Package Browser UI priority does not need to be sent to GitHub. `package-repack.yml` only needs selected indexes and the final `rename_map_json`.
+
 ### Joining split torrent parts on Windows
 
 Large torrent documents may arrive as ordered raw binary parts such as:
@@ -235,6 +284,8 @@ tiktok-direct-local-api.yml
 facebook-long-video-local-api.yml
 video-compress.yml
 torrent-document-local-api.yml
+package-inspect.yml
+package-repack.yml
 ```
 
 ## `dispatch_key`
@@ -248,6 +299,8 @@ Use a unique key per task. Recommended format:
 Most workflows include the key in `run-name`, which helps the bot match a run to a user task.
 
 `torrent-document-local-api.yml` intentionally does not expose `dispatch_key` in `run-name`. Bot integrations should match torrent runs by workflow file, dispatch time, branch, event type, and recent run ordering, while keeping `dispatch_key` private.
+
+Package workflows use `dispatch_key` for bot correlation and encrypted manifest naming. Keep it unique per Package Inspector task so `.package_manifests/<dispatch_key>.enc` does not collide with another active request.
 
 ## Finding the matching run
 
@@ -304,7 +357,9 @@ Reject or sanitize before dispatch:
 - local/private network URLs if the bot accepts arbitrary links,
 - suspicious output filenames,
 - attempts to place secrets in filenames or URLs,
-- torrent requests from non-admin users.
+- torrent requests from non-admin users,
+- package inspect/repack requests from non-admin users,
+- package rename paths that escape the ZIP root or use suspicious relative paths.
 
 For torrent split deliveries, the bot should tell the user that `.part001`, `.part002`, etc. are raw binary chunks and must be joined in order, not extracted as archives.
 

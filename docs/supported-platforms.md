@@ -16,6 +16,7 @@ Platform support depends on the selected workflow, source URL, available cookies
 | Reddit | Partial | No | No dedicated cookie secret | Generic only | Generic only | Depends on embedded media availability and `yt-dlp` support. |
 | Direct downloadable file | Yes | No | Not needed | Possible if media | Yes | Best route for document mode. |
 | Magnet / `.torrent` | No | `torrent-document-local-api.yml` | Not needed | No | Yes | Admin-oriented torrent document workflow. Supports listing, selected indexes, all files, Public Bot API for small documents, Local Bot API for large documents, and split raw binary parts. |
+| Archive / package source | No | `package-inspect.yml` + `package-repack.yml` | Not needed | No | ZIP output | Inspect archives, direct files, torrents, magnets, directory listings, or URL lists, then repack selected items. |
 | Generic media URL | Yes | No | No | Possible | Possible | Falls through to generic extraction/direct-download behavior. |
 | Compressible video URL | Through `video-compress.yml` | `video-compress.yml` | YouTube/Facebook cookies where applicable | Yes | Yes, including ZIP | Uses `yt-dlp` first, direct download fallback, then MP4/H.264/AAC compression. |
 
@@ -108,6 +109,30 @@ The generic workflow can:
 - wrap it in a ZIP,
 - split very large ZIP output into parts.
 
+
+## Package Inspector / Repacker
+
+Package workflows are intended for archive-like or multi-item sources that should be inspected before final Telegram delivery.
+
+Supported source categories include:
+
+- ZIP/RAR/7z-style archives when supported by the worker tools,
+- direct single files,
+- magnet links,
+- direct `.torrent` URLs,
+- directory listings,
+- URL lists.
+
+Recommended bot flow:
+
+1. Run `package-inspect.yml` with `source_url`.
+2. Read and decrypt `.package_manifests/<dispatch_key>.enc` on the bot side.
+3. Show the Package Browser to the admin.
+4. Let the admin select files, rename selected files, rename the current folder, or change the output ZIP name.
+5. Keep the most recently renamed file or folder-derived item at the top of the current Package Browser list while reviewing long package manifests.
+6. Run `package-repack.yml` with selected indexes and optional `rename_map_json`.
+
+This ordering behavior belongs to the Package Inspector / Repacker bot UI. It improves long-list navigation but does not change the manifest schema or workflow inputs.
 
 ## Torrent links
 

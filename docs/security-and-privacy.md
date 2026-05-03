@@ -13,7 +13,8 @@ Do not commit:
 - cookies,
 - private media URLs,
 - signed URLs,
-- personal download links.
+- personal download links,
+- package manifest encryption keys.
 
 Use GitHub Actions repository secrets only.
 
@@ -34,7 +35,10 @@ The workflows can receive or generate sensitive data:
 - downloaded filenames,
 - file paths,
 - file sizes,
-- API responses.
+- API responses,
+- Package Inspector manifests,
+- package rename maps,
+- selected package indexes.
 
 The workflows mask many of these values, but masking is best-effort and does not make raw logs safe to publish.
 
@@ -69,6 +73,8 @@ Do not share raw logs publicly. Before sharing logs:
 - remove Telegram API responses that may include private metadata.
 
 The generic workflow contains log sanitization helpers, but external tools may print new patterns that are not covered.
+
+Package Inspector stores bot-readable manifests as encrypted `.enc` files under `.package_manifests/`. The bot should decrypt the manifest locally, avoid printing file names from the manifest into public logs, and delete the `.enc` file after successful read.
 
 ## Public issue policy
 

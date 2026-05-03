@@ -21,6 +21,7 @@ The repository does not need a permanent media-processing server. GitHub Actions
 | Python snippets | Used for filename sanitization, ZIP creation, bitrate calculations, response parsing, and HTML escaping. |
 | Telegram Public Bot API | Sends smaller files directly through `https://api.telegram.org`. |
 | Telegram Local Bot API | Sends larger files through a local `telegram-bot-api --local` server. |
+| Package manifest store | Temporary `.package_manifests/<dispatch_key>.enc` files used by bot-side Package Browser integration. |
 
 ## Request lifecycle
 
@@ -95,7 +96,7 @@ This path is simpler and does not require `TELEGRAM_API_ID` or `TELEGRAM_API_HAS
 
 ### Local Bot API
 
-Used by all dedicated platform workflows and by `remote-media.yml` or `video-compress.yml` when large files need it.
+Used by all dedicated platform workflows and by `remote-media.yml`, `package-repack.yml`, or `video-compress.yml` when large files need it.
 
 The workflow starts:
 
@@ -220,6 +221,16 @@ The generic workflow can also:
 - create ZIP files using Python `zipfile` with `ZIP_STORED`,
 - split very large ZIP files into ordered parts,
 - send a Telegram notice before split parts explaining how to join them.
+
+## Package Inspector / Repacker architecture
+
+Package Inspector and Package Repacker are a two-step package workflow family.
+
+`package-inspect.yml` reads `source_url`, detects or stages the source, builds a manifest with stable item indexes, and encrypts that manifest into `.package_manifests/<dispatch_key>.enc` using `PACKAGE_MANIFEST_KEY`. The bot reads the encrypted manifest, decrypts it locally, then should delete the `.enc` file from the repository after a successful read.
+
+`package-repack.yml` receives `source_url`, selected indexes, optional delete indexes, optional `rename_map_json`, and `output_filename`. It stages only the selected items, applies internal path renames, creates the output ZIP, and sends it to Telegram. Large ZIP output can use Local Bot API or split delivery according to the same Telegram-size constraints used by package tools.
+
+Package Inspector / Repacker is split between GitHub Actions and the Telegram bot. GitHub Actions performs inspection, encrypted manifest storage, staging, ZIP creation, splitting, and Telegram delivery. The Telegram bot owns the Package Browser state: current folder, selected indexes, output ZIP name, rename map, and newest-renamed-first ordering. When the admin renames several files in a long list, the bot keeps the most recently renamed item at the top of the current list, then keeps other renamed items before unchanged items. The workflow still receives only the final selected indexes and `rename_map_json`.
 
 ## Platform detection in the generic workflow
 
