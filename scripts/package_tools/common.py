@@ -16,7 +16,6 @@ import subprocess
 import sys
 import time
 import urllib.parse
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -348,12 +347,18 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-@dataclass
 class TelegramContext:
-    token: str
-    chat_id: str
-    progress_chat_id: str = ""
-    progress_message_id: str = ""
+    def __init__(
+        self,
+        token: str,
+        chat_id: str,
+        progress_chat_id: str = "",
+        progress_message_id: str = "",
+    ):
+        self.token = token
+        self.chat_id = chat_id
+        self.progress_chat_id = progress_chat_id
+        self.progress_message_id = progress_message_id
 
     @classmethod
     def from_env(cls) -> "TelegramContext":
