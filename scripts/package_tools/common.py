@@ -4,13 +4,11 @@ import argparse
 import html
 import json
 import math
-import mimetypes
 import os
 import re
 import shutil
 import socket
 import subprocess
-import sys
 import time
 import urllib.parse
 from datetime import datetime, timezone
@@ -18,7 +16,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import urllib.request
-import urllib.error
 
 DIRECT_TELEGRAM_MAX_BYTES = 50_000_000
 LOCAL_BOT_API_MAX_BYTES = 2_000_000_000
