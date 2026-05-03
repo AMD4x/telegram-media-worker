@@ -160,9 +160,15 @@ def http_head(url: str, timeout: int = 25) -> dict[str, Any]:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 hdrs = {k.lower(): v for k, v in resp.headers.items()}
                 result.update({"ok": True, "status": getattr(resp, "status", 200), "headers": hdrs})
-                length = hdrs.get("content-length") or hdrs.get("Content-Length")
-                if length and str(length).isdigit():
-                    result["size_bytes"] = int(length)
+                content_range = hdrs.get("content-range") or hdrs.get("Content-Range") or ""
+                range_match = re.search(r"/(\d+)\s*$", content_range)
+
+                if range_match:
+                    result["size_bytes"] = int(range_match.group(1))
+                else:
+                    length = hdrs.get("content-length") or hdrs.get("Content-Length")
+                    if length and str(length).isdigit():
+                        result["size_bytes"] = int(length)
                 result["content_type"] = (hdrs.get("content-type") or "").split(";", 1)[0].strip()
                 cd = hdrs.get("content-disposition") or ""
                 if cd:
