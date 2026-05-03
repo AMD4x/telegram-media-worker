@@ -154,24 +154,127 @@ def stage_url_items(selected: list[dict[str, Any]], stage_dir: Path, work_dir: P
 def stage_torrent(source_url: str, selected: list[dict[str, Any]], stage_dir: Path, work_dir: Path, rename_map: dict[str, str]) -> None:
     if not selected:
         return
+
     download_dir = work_dir / "torrent_download"
     download_dir.mkdir(parents=True, exist_ok=True)
-    torrent_indexes = []
-    for item in selected:
-        torrent_indexes.append(str(item.get("torrent_index") or item.get("index")))
-    select_arg = ",".join(torrent_indexes)
-    if source_url.lower().startswith("magnet:?"):
-        cmd = ["aria2c", "--seed-time=0", "--summary-interval=30", "--allow-overwrite=true", f"--select-file={select_arg}", "--dir", str(download_dir), source_url]
+
+    source_lower = source_url.lower().strip()
+    torrent_source = source_url
+
+    def find_latest_torrent_file(*roots: Path) -> Path | None:
+        candidates: list[Path] = []
+
+        for root in roots:
+            try:
+                if root and root.exists():
+                    candidates.extend(
+                        path for path in root.rglob("*.torrent")
+                        if path.is_file() and path.stat().st_size > 0
+                    )
+            except Exception:
+                continue
+
+        if not candidates:
+            return None
+
+        return sorted(
+            candidates,
+            key=lambda path: path.stat().st_mtime if path.exists() else 0,
+            reverse=True,
+        )[0]
+
+    if source_lower.startswith("magnet:?"):
+        metadata_dir = work_dir / "torrent_metadata"
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+
+        runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp")
+        dht_file = runner_temp / "aria2-dht-package-repack.dat"
+
+        metadata_cmd = [
+            "timeout",
+            "240s",
+            "aria2c",
+            f"--dir={metadata_dir}",
+            "--bt-metadata-only=true",
+            "--bt-save-metadata=true",
+            "--seed-time=0",
+            "--seed-ratio=0.0",
+            "--max-overall-upload-limit=1K",
+            "--disable-ipv6=true",
+            "--enable-dht=true",
+            "--enable-dht6=false",
+            f"--dht-file-path={dht_file}",
+            "--bt-stop-timeout=180",
+            "--summary-interval=0",
+            "--console-log-level=warn",
+            source_url,
+        ]
+
+        metadata_result = run_cmd(
+            metadata_cmd,
+            cwd=work_dir,
+            timeout=300,
+            check=False,
+        )
+
+        torrent_file = find_latest_torrent_file(metadata_dir, work_dir, runner_temp, Path.cwd())
+
+        if not torrent_file:
+            raise RuntimeError(
+                "Could not fetch torrent metadata for selected repack. "
+                f"aria2c exit code: {metadata_result.returncode}"
+            )
+
+        torrent_source = str(torrent_file)
     else:
         torrent_file = work_dir / sanitize_filename(filename_from_url(source_url, "source.torrent"), "source.torrent")
         download_file(source_url, torrent_file)
-        cmd = ["aria2c", "--seed-time=0", "--summary-interval=30", "--allow-overwrite=true", f"--select-file={select_arg}", "--dir", str(download_dir), str(torrent_file)]
-    run_cmd(cmd, timeout=21600, check=True)
+        torrent_source = str(torrent_file)
+
+    torrent_indexes = []
     for item in selected:
-        original = sanitize_relative_path(str(item.get("path") or item.get("name") or ""), fallback=f"torrent_{item.get('index')}.bin")
+        torrent_indexes.append(str(item.get("torrent_index") or item.get("index")))
+
+    select_arg = ",".join(torrent_indexes)
+
+    cmd = [
+        "aria2c",
+        "--dir",
+        str(download_dir),
+        "--seed-time=0",
+        "--seed-ratio=0.0",
+        "--max-overall-upload-limit=1K",
+        "--disable-ipv6=true",
+        "--enable-dht=true",
+        "--enable-dht6=false",
+        "--follow-torrent=mem",
+        "--bt-remove-unselected-file=true",
+        "--bt-stop-timeout=300",
+        "--bt-max-peers=80",
+        "--max-connection-per-server=8",
+        "--split=8",
+        "--min-split-size=1M",
+        "--file-allocation=none",
+        "--allow-overwrite=true",
+        "--auto-file-renaming=false",
+        "--summary-interval=30",
+        "--console-log-level=warn",
+        f"--select-file={select_arg}",
+        torrent_source,
+    ]
+
+    run_cmd(cmd, timeout=21600, check=True)
+
+    for item in selected:
+        original = sanitize_relative_path(
+            str(item.get("path") or item.get("name") or ""),
+            fallback=f"torrent_{item.get('index')}.bin"
+        )
+
         candidates = [download_dir / original]
         candidates.extend(download_dir.rglob(Path(original).name))
-        src = next((p for p in candidates if p.exists() and p.is_file()), None)
+
+        src = next((path for path in candidates if path.exists() and path.is_file()), None)
         if src:
             copy_into_stage(src, stage_dir, target_path_for_item(item, rename_map))
 
