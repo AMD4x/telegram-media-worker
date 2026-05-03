@@ -129,15 +129,21 @@ def safe_url_for_log(url: str) -> str:
 
 
 def run_cmd(cmd: list[str], *, cwd: str | Path | None = None, timeout: int | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        cmd,
-        cwd=str(cwd) if cwd else None,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        timeout=timeout,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Package command timed out.") from None
+    except OSError as exc:
+        raise RuntimeError("Package command could not be executed.") from None
+
     if check and result.returncode != 0:
         raise RuntimeError(f"Package command failed with exit code {result.returncode}.")
     return result
