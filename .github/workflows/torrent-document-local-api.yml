@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 360
 
     container:
-      image: ghcr.io/ad4x/tg-video-worker:latest
+      image: ghcr.io/amd4x/tg-video-worker:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -173,7 +173,7 @@ jobs:
 
             safe_label="$(printf "%s" "$label" | telegram_escape_html)"
             safe_detail="$(printf "%s" "$detail" | tr "_" " " | telegram_escape_html)"
-            safe_run_url="$(printf "%s" "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-unknown}" | telegram_escape_html)"
+            safe_run_url="$(printf "%s" "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AMD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-unknown}" | telegram_escape_html)"
             bar="$(progress_bar_text "$percent")"
 
             printf -v text '🐙 <b>GitHub Remote</b>\n\n📊 <code>[%s] %s%%</code>\n🧭 <b>Status:</b> %s\nℹ️ <i>%s</i>\n🆔 <code>%s</code>\n🔗 <a href="%s">Open Run</a>' \
@@ -237,7 +237,7 @@ jobs:
             safe_count="$(printf "%s" "${file_count:-0}" | telegram_escape_html)"
             safe_send_mode="$(printf "%s" "$send_mode_text" | telegram_escape_html)"
             safe_send_method="$(printf "%s" "$send_method" | telegram_escape_html)"
-            safe_run_url="$(printf "%s" "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-unknown}" | telegram_escape_html)"
+            safe_run_url="$(printf "%s" "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AMD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-unknown}" | telegram_escape_html)"
 
             printf -v text '%s\n\n🌐 <b>Source:</b> <code>Torrent</code>\n🧭 <b>Path:</b> <code>github-torrent-document</code>\n📦 <b>Mode:</b> <code>%s</code>\n📄 <b>Files:</b> <code>%s</code>\n📏 <b>Final Size:</b> <code>%s</code> — %s\n🚀 <b>Send Mode:</b> <code>%s</code>\n📤 <b>Send Method:</b> <code>%s</code>\n🆔 <code>%s</code>\n🔗 <a href="%s">Open Run</a>' \
               "$title" \

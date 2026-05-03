@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 180
 
     container:
-      image: ghcr.io/ad4x/tg-video-worker:latest
+      image: ghcr.io/amd4x/tg-video-worker:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -123,7 +123,7 @@ jobs:
             fi
 
             bar="$(progress_bar "$percent")"
-            run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-}"
+            run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AMD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-}"
 
             text="🐙 <b>GitHub Remote</b>"
             text="${text}"$'\n\n'"📊 <code>[${bar}] ${percent}%</code>"
@@ -149,7 +149,7 @@ jobs:
               return 0
             fi
 
-            run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-}"
+            run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AMD4x/telegram-media-worker}/actions/runs/${GITHUB_RUN_ID:-}"
 
             text="✅ <b>GitHub YouTube completed.</b>"
             text="${text}"$'\n\n'"🌐 <b>Platform:</b> <code>YouTube</code>"

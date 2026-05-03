@@ -186,7 +186,7 @@ Completion summary example:
 Endpoint:
 
 ```text
-POST /repos/AD4x/telegram-media-worker/actions/workflows/video-compress.yml/dispatches
+POST /repos/AMD4x/telegram-media-worker/actions/workflows/video-compress.yml/dispatches
 ```
 
 Use the same GitHub token permission model already used by the bot for existing `workflow_dispatch` calls.

@@ -37,7 +37,7 @@ def telegram_chat_id() -> str:
 
 def github_run_url() -> str:
     server = env("GITHUB_SERVER_URL", "https://github.com")
-    repo = env("GITHUB_REPOSITORY", "AD4x/telegram-media-worker")
+    repo = env("GITHUB_REPOSITORY", "AMD4x/telegram-media-worker")
     run_id = env("GITHUB_RUN_ID", "unknown")
     return f"{server}/{repo}/actions/runs/{run_id}"
 

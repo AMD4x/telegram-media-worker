@@ -56,7 +56,7 @@ Check sanitized logs and the Local Bot API startup section. Do not share raw log
 
 The container image does not contain `telegram-bot-api`.
 
-Rebuild or update `ghcr.io/ad4x/tg-video-worker:latest`.
+Rebuild or update `ghcr.io/amd4x/tg-video-worker:latest`.
 
 ## `yt-dlp is missing from worker image`
 

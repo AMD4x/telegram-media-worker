@@ -13,7 +13,7 @@ The repository does not need a permanent media-processing server. GitHub Actions
 | Component | Role |
 |---|---|
 | GitHub Actions workflow | Main execution unit. Each workflow is a remote worker. |
-| `ghcr.io/ad4x/tg-video-worker:latest` | Container image used by workflows. It must contain the runtime tools. |
+| `ghcr.io/amd4x/tg-video-worker:latest` | Container image used by workflows. It must contain the runtime tools. |
 | `yt-dlp` | Extracts and downloads media from supported platforms. |
 | `ffmpeg` | Converts, remuxes, normalizes, compresses, or prepares media. |
 | `ffprobe` | Reads codecs, dimensions, duration, streams, and metadata. |

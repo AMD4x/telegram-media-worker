@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Video compression worker for AD4x telegram-media-worker.
+"""Video compression worker for AMD4x telegram-media-worker.
 
 The script is intentionally self-contained so the new workflow can stay isolated
 from the existing workflows while keeping the same progress-message philosophy.
@@ -47,7 +47,7 @@ def mask(value: str) -> None:
 
 def run_url() -> str:
     server = env("GITHUB_SERVER_URL", "https://github.com")
-    repo = env("GITHUB_REPOSITORY", "AD4x/telegram-media-worker")
+    repo = env("GITHUB_REPOSITORY", "AMD4x/telegram-media-worker")
     run_id = env("GITHUB_RUN_ID", "unknown")
     return f"{server}/{repo}/actions/runs/{run_id}"
 

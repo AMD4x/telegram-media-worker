@@ -32,7 +32,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_NAME: ghcr.io/ad4x/tg-video-worker:latest
+  IMAGE_NAME: ghcr.io/amd4x/tg-video-worker:latest
   MONTHLY_FORCE_CRON: "43 3 1 * *"
 
 jobs:
@@ -338,8 +338,8 @@ jobs:
           pull: true
           push: true
           tags: |
-            ghcr.io/ad4x/tg-video-worker:latest
-            ghcr.io/ad4x/tg-video-worker:${{ github.run_number }}
+            ghcr.io/amd4x/tg-video-worker:latest
+            ghcr.io/amd4x/tg-video-worker:${{ github.run_number }}
 
   skip_summary:
     name: Skip summary
