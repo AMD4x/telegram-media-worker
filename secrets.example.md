@@ -11,6 +11,7 @@ Do not commit real secrets to the repository.
 ```text
 TELEGRAM_TOKEN=123456789:REPLACE_WITH_YOUR_BOT_TOKEN
 TELEGRAM_CHAT_ID=123456789
+ADMIN_ID=123456789
 ```
 
 ## Required for Local Bot API workflows
@@ -35,4 +36,5 @@ FACEBOOK_COOKIES_TXT=# Netscape HTTP Cookie File
 - Do not put cookies inside workflow inputs.
 - Do not paste real cookies into issues or screenshots.
 - Rotate tokens and cookies if they ever appear in logs.
+- `ADMIN_ID` is a fallback destination used by workflows such as `video-compress.yml` when `chat_id` and `TELEGRAM_CHAT_ID` are empty.
 - Some platforms may work without cookies, but cookies can be required for restricted, age-gated, region-gated, or account-sensitive media.

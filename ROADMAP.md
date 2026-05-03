@@ -2,7 +2,7 @@
 
 ## Current state
 
-The project is functionally complete. All five workflow families are working.
+The project is functionally complete. All six workflow families are working.
 The Docker image rebuilds automatically when yt-dlp or Deno release updates.
 
 ## Known limitations
@@ -12,13 +12,15 @@ The Docker image rebuilds automatically when yt-dlp or Deno release updates.
   for now to keep each workflow fully self-contained.
 
 - Instagram, X/Twitter, and Reddit fall through to the generic remote-media
-  path. Cookie support for these platforms is not wired in.
+  path, or to video-compress.yml when compression is requested. Cookie
+  support for these platforms is not wired in.
 
 - The TikTok workflow includes a tikwm.com fallback path. This is a
   third-party service and may stop working without notice.
 
-- Dedicated platform workflows do not support document_mode. Only the
-  generic remote-media workflow handles document and ZIP output.
+- Dedicated platform workflows do not support document_mode. The
+  generic remote-media workflow handles document and ZIP output, while
+  video-compress.yml has its own video/document/zip output modes.
 
 - AMD4x Merge is an optional user-side Windows restore helper only. It
   does not change workflow behavior, upload limits, secrets, or inputs.
