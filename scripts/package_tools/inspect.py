@@ -1,12 +1,9 @@
-"""Inspect package-like sources and produce manifest.json for bot-driven repack."""
-
 from __future__ import annotations
 
 import argparse
 import json
 import os
 import re
-import sys
 import zipfile
 import base64
 import binascii
@@ -21,7 +18,6 @@ from common import (
     build_manifest,
     compact_items_for_telegram,
     download_file,
-    env,
     extract_urls_from_text,
     filename_from_url,
     format_bytes,
@@ -29,14 +25,12 @@ from common import (
     html_escape,
     http_head,
     item_from_path,
-    manifest_caption,
     progress_stage,
     read_url_text,
     run_cmd,
     safe_url_for_log,
     sanitize_filename,
     telegram_edit_final,
-    telegram_send_document,
     telegram_send_message,
     write_json,
 )
@@ -117,7 +111,6 @@ def parse_aria2_show_files(text: str) -> list[dict[str, Any]]:
         size_match = re.match(r"^\s*\|\s*([0-9.]+)\s*([KMGT]?i?B|[KMGT]?B)\s*$", line, re.I)
         if current and size_match:
             current["size_text"] = f"{size_match.group(1)} {size_match.group(2)}"
-    # Re-number defensively because aria2 indexes are what repack needs, but manifest order must be stable.
     for pos, item in enumerate(items, start=1):
         item["torrent_index"] = int(item.get("index") or pos)
         item["index"] = pos
