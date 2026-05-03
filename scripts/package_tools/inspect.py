@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Inspect package-like sources and produce manifest.json for bot-driven repack."""
 
 from __future__ import annotations
@@ -124,6 +123,109 @@ def parse_aria2_show_files(text: str) -> list[dict[str, Any]]:
         item["index"] = pos
     return items
 
+def _bdecode(data: bytes, pos: int = 0) -> tuple[Any, int]:
+    if pos >= len(data):
+        raise ValueError("Unexpected end of bencode data.")
+
+    token = data[pos:pos + 1]
+
+    if token == b"i":
+        end = data.index(b"e", pos)
+        return int(data[pos + 1:end]), end + 1
+
+    if token == b"l":
+        pos += 1
+        result = []
+        while data[pos:pos + 1] != b"e":
+            value, pos = _bdecode(data, pos)
+            result.append(value)
+        return result, pos + 1
+
+    if token == b"d":
+        pos += 1
+        result = {}
+        while data[pos:pos + 1] != b"e":
+            key, pos = _bdecode(data, pos)
+            value, pos = _bdecode(data, pos)
+            result[key] = value
+        return result, pos + 1
+
+    if token.isdigit():
+        colon = data.index(b":", pos)
+        length = int(data[pos:colon])
+        start = colon + 1
+        end = start + length
+        return data[start:end], end
+
+    raise ValueError(f"Invalid bencode token at position {pos}.")
+
+
+def _torrent_text(value: Any) -> str:
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-8")
+        except UnicodeDecodeError:
+            return value.decode("latin-1", errors="replace")
+
+    return str(value or "")
+
+
+def _torrent_dict_get(data: dict, *keys: bytes) -> Any:
+    for key in keys:
+        if key in data:
+            return data[key]
+    return None
+
+
+def parse_torrent_metadata_file(torrent_file: Path) -> list[dict[str, Any]]:
+    raw = torrent_file.read_bytes()
+    decoded, _pos = _bdecode(raw, 0)
+
+    if not isinstance(decoded, dict):
+        return []
+
+    info = decoded.get(b"info")
+    if not isinstance(info, dict):
+        return []
+
+    root_name = _torrent_text(
+        _torrent_dict_get(info, b"name.utf-8", b"name")
+    ).strip() or "torrent"
+
+    items: list[dict[str, Any]] = []
+
+    files = info.get(b"files")
+    if isinstance(files, list):
+        for torrent_index, file_entry in enumerate(files, start=1):
+            if not isinstance(file_entry, dict):
+                continue
+
+            size = int(file_entry.get(b"length") or 0)
+            path_parts = _torrent_dict_get(file_entry, b"path.utf-8", b"path")
+
+            if not isinstance(path_parts, list):
+                continue
+
+            rel_parts = []
+            for part in path_parts:
+                clean_part = _torrent_text(part).strip()
+                if clean_part:
+                    rel_parts.append(clean_part)
+
+            if not rel_parts:
+                continue
+
+            item_path = "/".join([root_name, *rel_parts]).strip("/")
+            item = item_from_path(len(items) + 1, item_path, size, kind="torrent_file")
+            item["torrent_index"] = torrent_index
+            items.append(item)
+
+        return items
+
+    size = int(info.get(b"length") or 0)
+    item = item_from_path(1, root_name, size, kind="torrent_file")
+    item["torrent_index"] = 1
+    return [item]
 
 def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
     warnings: list[str] = []
@@ -141,7 +243,6 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
         if re.fullmatch(r"[A-Fa-f0-9]{40}", raw):
             return raw.upper()
 
-        # دعم btih base32 عند الحاجة.
         if re.fullmatch(r"[A-Za-z2-7]{32}", raw):
             try:
                 return base64.b32decode(raw.upper()).hex().upper()
@@ -173,6 +274,13 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
         )[0]
 
     def list_torrent_file(torrent_file: Path) -> list[dict[str, Any]]:
+        try:
+            items = parse_torrent_metadata_file(torrent_file)
+            if items:
+                return items
+        except Exception as exc:
+            warnings.append(f"Direct torrent metadata parser failed: {exc}")
+
         show_result = run_cmd(
             [
                 "aria2c",
@@ -186,10 +294,6 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
         return parse_aria2_show_files(show_result.stdout or "")
 
     def fetch_cached_torrent(info_hash: str) -> Path | None:
-        """
-        محاولة جلب ملف .torrent من cache عام باستخدام info-hash.
-        هذا للفحص فقط، ولا يحمّل المحتوى.
-        """
         urls = [
             f"https://itorrents.org/torrent/{info_hash}.torrent",
             f"http://itorrents.net/torrent/{info_hash}.torrent",
@@ -220,7 +324,6 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
                     except Exception:
                         pass
 
-                # ملف .torrent هو bencode، وغالبًا يبدأ بـ d ويحتوي info.
                 if not data.startswith(b"d") or b"4:info" not in data[:2000000]:
                     continue
 
@@ -237,7 +340,6 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
     if source_lower.startswith("magnet:?"):
         info_hash = extract_btih(source_url)
 
-        # 1) جرّب cache أولًا لأنّه أكثر ثباتًا من DHT على GitHub runners.
         if info_hash:
             cached_torrent = fetch_cached_torrent(info_hash)
             if cached_torrent:
@@ -247,7 +349,6 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
 
                 warnings.append("Torrent cache returned metadata, but aria2c -S did not return a parsable file list.")
 
-        # 2) fallback: نفس فكرة workflow التورنت القديم تقريبًا عبر aria2/DHT.
         runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp")
         dht_file = runner_temp / "aria2-dht-package-inspect.dat"
         fetch_log = work_dir / "magnet-metadata-fetch.log"
