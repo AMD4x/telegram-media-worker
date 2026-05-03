@@ -1,0 +1,154 @@
+name: Package Repacker
+run-name: "AMD4x Package Repack · ${{ inputs.dispatch_key }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: "Original source URL used by package-inspect.yml"
+        required: true
+        type: string
+      keep_indexes:
+        description: "Indexes to keep, e.g. 1,2,4-6. Empty means keep everything except delete_indexes."
+        required: false
+        type: string
+      delete_indexes:
+        description: "Indexes to delete, e.g. 3,5. Ignored when keep_indexes is provided."
+        required: false
+        type: string
+      rename_map_json:
+        description: "JSON object mapping original manifest path/name/index to new relative path"
+        required: false
+        type: string
+      output_filename:
+        description: "Output ZIP filename"
+        required: false
+        default: "package_output.zip"
+        type: string
+      send_manifest:
+        description: "Send repack-manifest.json to Telegram"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      split_part_mib:
+        description: "Part size in MiB for ZIP files larger than Telegram single-file limit"
+        required: false
+        default: "1900"
+        type: string
+      progress_chat_id:
+        description: "Telegram progress chat id"
+        required: false
+        type: string
+      progress_message_id:
+        description: "Telegram progress message id"
+        required: false
+        type: string
+      reply_to_message_id:
+        description: "Reserved for future bot integration; currently kept as compatibility input"
+        required: false
+        type: string
+      dispatch_key:
+        description: "Dispatch key for bot-side correlation"
+        required: false
+        default: "manual"
+        type: string
+      send_telegram:
+        description: "Send output ZIP to Telegram"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+  packages: read
+  actions: read
+
+jobs:
+  package_repack:
+    name: Repack selected package items
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    container:
+      image: ghcr.io/ad4x/tg-video-worker:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare package tools
+        run: |
+          set -euo pipefail
+          if command -v apt-get >/dev/null 2>&1; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends aria2 p7zip-full libarchive-tools unrar-free unzip ca-certificates
+          fi
+          python3 --version
+          aria2c --version | head -n 1 || true
+          7z | head -n 2 || true
+
+      - name: Repack and send result
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          SOURCE_URL: ${{ inputs.source_url }}
+          KEEP_INDEXES: ${{ inputs.keep_indexes }}
+          DELETE_INDEXES: ${{ inputs.delete_indexes }}
+          RENAME_MAP_JSON: ${{ inputs.rename_map_json }}
+          OUTPUT_FILENAME: ${{ inputs.output_filename }}
+          SEND_MANIFEST: ${{ inputs.send_manifest }}
+          SPLIT_PART_MIB: ${{ inputs.split_part_mib }}
+          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
+          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
+          REPLY_TO_MESSAGE_ID: ${{ inputs.reply_to_message_id }}
+          DISPATCH_KEY: ${{ inputs.dispatch_key }}
+          SEND_TELEGRAM: ${{ inputs.send_telegram }}
+        run: |
+          set -euo pipefail
+          mkdir -p work/package-repack
+          echo "::add-mask::${SOURCE_URL}"
+          [ -n "${RENAME_MAP_JSON:-}" ] && echo "::add-mask::${RENAME_MAP_JSON}"
+          [ -n "${TELEGRAM_TOKEN:-}" ] && echo "::add-mask::${TELEGRAM_TOKEN}"
+          [ -n "${TELEGRAM_CHAT_ID:-}" ] && echo "::add-mask::${TELEGRAM_CHAT_ID}"
+          [ -n "${ADMIN_ID:-}" ] && echo "::add-mask::${ADMIN_ID}"
+          [ -n "${PROGRESS_CHAT_ID:-}" ] && echo "::add-mask::${PROGRESS_CHAT_ID}"
+          [ -n "${PROGRESS_MESSAGE_ID:-}" ] && echo "::add-mask::${PROGRESS_MESSAGE_ID}"
+          [ -n "${REPLY_TO_MESSAGE_ID:-}" ] && echo "::add-mask::${REPLY_TO_MESSAGE_ID}"
+
+          python3 scripts/package_tools/repack.py \
+            --source-url "$SOURCE_URL" \
+            --keep-indexes "${KEEP_INDEXES:-}" \
+            --delete-indexes "${DELETE_INDEXES:-}" \
+            --rename-map-json "${RENAME_MAP_JSON:-}" \
+            --output-filename "${OUTPUT_FILENAME:-package_output.zip}" \
+            --send-manifest "${SEND_MANIFEST:-false}" \
+            --split-part-mib "${SPLIT_PART_MIB:-1900}" \
+            --dispatch-key "${DISPATCH_KEY:-manual}" \
+            --progress-chat-id "${PROGRESS_CHAT_ID:-}" \
+            --progress-message-id "${PROGRESS_MESSAGE_ID:-}" \
+            --work-dir "work/package-repack" \
+            --manifest-out "repack-manifest.json" \
+            --send-telegram "${SEND_TELEGRAM:-true}"
+
+      - name: Upload repack manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-repack-manifest-${{ inputs.dispatch_key || 'manual' }}
+          path: repack-manifest.json
+          if-no-files-found: error

@@ -1,0 +1,105 @@
+name: Package Inspector
+run-name: "AMD4x Package Inspect · ${{ inputs.dispatch_key }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: "ZIP/RAR/7z/direct file/torrent/magnet/directory listing/URL list"
+        required: true
+        type: string
+      progress_chat_id:
+        description: "Telegram progress chat id"
+        required: false
+        type: string
+      progress_message_id:
+        description: "Telegram progress message id"
+        required: false
+        type: string
+      dispatch_key:
+        description: "Dispatch key for bot-side correlation"
+        required: false
+        default: "manual"
+        type: string
+      send_telegram:
+        description: "Send report and manifest to Telegram"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+  packages: read
+  actions: read
+
+jobs:
+  package_inspect:
+    name: Inspect package source
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    container:
+      image: ghcr.io/ad4x/tg-video-worker:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare package tools
+        run: |
+          set -euo pipefail
+          if command -v apt-get >/dev/null 2>&1; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends aria2 p7zip-full libarchive-tools unrar-free unzip ca-certificates
+          fi
+          python3 --version
+          aria2c --version | head -n 1 || true
+          7z | head -n 2 || true
+
+      - name: Inspect and send manifest
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          SOURCE_URL: ${{ inputs.source_url }}
+          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
+          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
+          DISPATCH_KEY: ${{ inputs.dispatch_key }}
+          SEND_TELEGRAM: ${{ inputs.send_telegram }}
+        run: |
+          set -euo pipefail
+          mkdir -p work/package-inspect
+          echo "::add-mask::${SOURCE_URL}"
+          [ -n "${TELEGRAM_TOKEN:-}" ] && echo "::add-mask::${TELEGRAM_TOKEN}"
+          [ -n "${TELEGRAM_CHAT_ID:-}" ] && echo "::add-mask::${TELEGRAM_CHAT_ID}"
+          [ -n "${ADMIN_ID:-}" ] && echo "::add-mask::${ADMIN_ID}"
+          [ -n "${PROGRESS_CHAT_ID:-}" ] && echo "::add-mask::${PROGRESS_CHAT_ID}"
+          [ -n "${PROGRESS_MESSAGE_ID:-}" ] && echo "::add-mask::${PROGRESS_MESSAGE_ID}"
+
+          python3 scripts/package_tools/inspect.py \
+            --source-url "$SOURCE_URL" \
+            --dispatch-key "${DISPATCH_KEY:-manual}" \
+            --progress-chat-id "${PROGRESS_CHAT_ID:-}" \
+            --progress-message-id "${PROGRESS_MESSAGE_ID:-}" \
+            --work-dir "work/package-inspect" \
+            --manifest-out "manifest.json" \
+            --send-telegram "${SEND_TELEGRAM:-true}"
+
+      - name: Upload manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-manifest-${{ inputs.dispatch_key || 'manual' }}
+          path: manifest.json
+          if-no-files-found: error
