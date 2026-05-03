@@ -29,7 +29,8 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
 | Facebook as document/ZIP | `remote-media.yml` |
 | Direct file URL as Telegram document | `remote-media.yml` |
 | Unknown platform video | `remote-media.yml` |
-| Instagram/X/Reddit | `remote-media.yml` |
+| Compress a video before Telegram delivery | `video-compress.yml` |
+| Instagram/X/Reddit | `remote-media.yml` or `video-compress.yml` when compression is required |
 | Magnet link or direct `.torrent` URL | `torrent-document-local-api.yml` |
 
 ## Inputs to send
@@ -111,6 +112,27 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
   }
 }
 ```
+
+### Video compression request
+
+```json
+{
+  "ref": "main",
+  "inputs": {
+    "media_url": "https://example.com/video.mp4",
+    "compression_level": "75",
+    "send_as": "zip",
+    "output_filename": "",
+    "chat_id": "123456789",
+    "progress_chat_id": "123456789",
+    "progress_message_id": "62",
+    "reply_to_message_id": "",
+    "dispatch_key": "123456789-62-abcd"
+  }
+}
+```
+
+`output_filename` can be left empty. In that case, `video-compress.yml` creates a default name such as `instagram-20260503-231455.mp4` or `facebook-20260503-231455.zip`.
 
 
 ### Torrent list request
@@ -211,6 +233,7 @@ remote-media.yml
 youtube-video-local-api.yml
 tiktok-direct-local-api.yml
 facebook-long-video-local-api.yml
+video-compress.yml
 torrent-document-local-api.yml
 ```
 
@@ -255,9 +278,11 @@ Bot-side cancellation should also update the Telegram progress message so the us
 
 ## Choosing `send_as`
 
-Use `send_as=document` only with `remote-media.yml`.
+Use `send_as=document` with `remote-media.yml` for document delivery and with `video-compress.yml` for compressed MP4 document delivery.
 
-Dedicated workflows ignore `send_as`; sending `document` to them will not turn the result into a document.
+Use `send_as=zip` only with `video-compress.yml` or the ZIP path in `remote-media.yml` document mode.
+
+Dedicated YouTube, TikTok, and Facebook video workflows ignore `send_as`; sending `document` to them will not turn the result into a document.
 
 ## Choosing `document_mode`
 

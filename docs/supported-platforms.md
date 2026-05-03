@@ -17,6 +17,7 @@ Platform support depends on the selected workflow, source URL, available cookies
 | Direct downloadable file | Yes | No | Not needed | Possible if media | Yes | Best route for document mode. |
 | Magnet / `.torrent` | No | `torrent-document-local-api.yml` | Not needed | No | Yes | Admin-oriented torrent document workflow. Supports listing, selected indexes, all files, Public Bot API for small documents, Local Bot API for large documents, and split raw binary parts. |
 | Generic media URL | Yes | No | No | Possible | Possible | Falls through to generic extraction/direct-download behavior. |
+| Compressible video URL | Through `video-compress.yml` | `video-compress.yml` | YouTube/Facebook cookies where applicable | Yes | Yes, including ZIP | Uses `yt-dlp` first, direct download fallback, then MP4/H.264/AAC compression. |
 
 ## Quality values
 
@@ -70,12 +71,26 @@ Use a two-path approach:
 
 Requires a final file with both video and audio streams, H.264 video, and AAC audio. It may transcode fallback candidates when needed.
 
+## Video compression workflow
+
+`video-compress.yml` can be used for any source URL that `yt-dlp` or direct download can resolve into a readable video stream. It detects common platforms such as YouTube, Facebook, Instagram, TikTok, X/Twitter, and Reddit for progress summaries and default file names.
+
+Output modes:
+
+| Mode | Telegram output | Extension |
+|:---:|:---:|:---:|
+| `video` | streamable video | `.mp4` |
+| `document` | document | `.mp4` |
+| `zip` | document | `.zip` |
+
+Compression strength is controlled by `compression_level` from `1` to `100`; higher values produce stronger compression and smaller files.
+
 ## Cookies
 
 | Secret | Used by | Format | Purpose |
 |---|---|---|---|
-| `YOUTUBE_COOKIES_TXT` | `remote-media.yml`, `youtube-video-local-api.yml` | Netscape HTTP Cookie File | Restricted, age-gated, region-gated, or account-sensitive YouTube content. |
-| `FACEBOOK_COOKIES_TXT` | `remote-media.yml`, `facebook-long-video-local-api.yml` | Netscape HTTP Cookie File | Account-sensitive or restricted Facebook content. |
+| `YOUTUBE_COOKIES_TXT` | `remote-media.yml`, `youtube-video-local-api.yml`, `video-compress.yml` | Netscape HTTP Cookie File | Restricted, age-gated, region-gated, or account-sensitive YouTube content. |
+| `FACEBOOK_COOKIES_TXT` | `remote-media.yml`, `facebook-long-video-local-api.yml`, `video-compress.yml` | Netscape HTTP Cookie File | Account-sensitive or restricted Facebook content. |
 
 No dedicated repository secret currently exists for TikTok, Instagram, X/Twitter, or Reddit cookies.
 

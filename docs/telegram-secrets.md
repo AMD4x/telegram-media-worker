@@ -45,6 +45,7 @@ Required by:
 - `tiktok-direct-local-api.yml`,
 - `facebook-long-video-local-api.yml`,
 - `remote-media.yml` when a file is too large for Public Bot API and Local Bot API is needed.
+- `video-compress.yml` when the compressed output is too large for Public Bot API and Local Bot API is needed.
 
 The workflows start Local Bot API with:
 
@@ -108,7 +109,7 @@ Rotate secrets if:
 
 ## Minimal setup
 
-For small generic uploads:
+For small generic uploads and small `video-compress.yml` outputs:
 
 ```text
 TELEGRAM_TOKEN

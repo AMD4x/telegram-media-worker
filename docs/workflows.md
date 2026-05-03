@@ -4,25 +4,27 @@ This document describes the behavior of each workflow.
 
 ## Capability matrix
 
-| Capability | `remote-media.yml` | `youtube-video-local-api.yml` | `tiktok-direct-local-api.yml` | `facebook-long-video-local-api.yml` | `torrent-document-local-api.yml` |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Manual `workflow_dispatch` | Yes | Yes | Yes | Yes | Yes |
-| Video output | Yes | Yes | Yes | Yes | No |
-| Document output | Yes | No | No | No | Yes |
-| `document_mode=zip` | Yes | No | No | No | No |
-| `document_mode=original` | Yes | No | No | No | No |
-| Split large ZIP into parts | Yes | No | No | No | No |
-| Split large documents into parts | Yes | No | No | No | Yes |
-| Torrent file listing | No | No | No | No | Yes |
-| Selected torrent indexes | No | No | No | No | Yes |
-| Progress message edits | Yes | Yes | Yes | Yes | Yes |
-| Public Bot API | Yes, for small files | No | No | No | Yes, for small documents |
-| Local Bot API | Yes, when needed | Yes | Yes | Yes | Yes |
-| YouTube cookies | Yes | Yes | No | No | No |
-| Facebook cookies | Yes | No | No | Yes | No |
-| TikTok third-party resolver | No | No | Yes | No | No |
-| Telegram/iPhone video preparation | Yes | Yes | Yes, simpler codec/audio check | Yes | No |
-| Size-fit recompression | Yes | No | No | No | No |
+| Capability | `remote-media.yml` | `youtube-video-local-api.yml` | `tiktok-direct-local-api.yml` | `facebook-long-video-local-api.yml` | `torrent-document-local-api.yml` | `video-compress.yml` |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Manual `workflow_dispatch` | yes | yes | yes | yes | yes | yes |
+| Video output | yes | yes | yes | yes | no | yes |
+| Document output | yes | no | no | no | yes | yes |
+| ZIP output | yes | no | no | no | no | yes |
+| `document_mode=zip` | yes | no | no | no | no | no |
+| `document_mode=original` | yes | no | no | no | no | no |
+| Split large ZIP into parts | yes | no | no | no | no | no |
+| Split large documents into parts | yes | no | no | no | yes | no |
+| Torrent file listing | no | no | no | no | yes | no |
+| Selected torrent indexes | no | no | no | no | yes | no |
+| Progress message edits | yes | yes | yes | yes | yes | yes |
+| Public Bot API | small files | no | no | no | small documents | small files |
+| Local Bot API | when needed | yes | yes | yes | yes | when needed |
+| YouTube cookies | yes | yes | no | no | no | yes |
+| Facebook cookies | yes | no | no | yes | no | yes |
+| TikTok third-party resolver | no | no | yes | no | no | no |
+| Telegram/iPhone video preparation | yes | yes | codec/audio check | yes | no | yes |
+| Size-fit recompression | yes | no | no | no | no | no |
+| User-selected compression strength | no | no | no | no | no | yes |
 
 ## `remote-media.yml`
 
@@ -447,10 +449,56 @@ Always starts Telegram Local Bot API and sends through `sendVideo` with `support
 
 Fails if the prepared file is empty or larger than `2,000,000,000` bytes.
 
+## `video-compress.yml`
+
+### Purpose
+
+Independent remote video-compression workflow. It downloads a source video, compresses it with `ffmpeg`, normalizes it to Telegram/mobile-friendly MP4, then sends it as a video, document, or ZIP-wrapped document.
+
+### Inputs
+
+| Input | Required | Default | Behavior |
+|:---:|:---:|:---:|---|
+| `media_url` | yes | - | Source video URL. |
+| `compression_level` | yes | `50` | Compression strength from `1` to `100`; higher means stronger compression and smaller output. |
+| `send_as` | yes | `video` | `video`, `document`, or `zip`; invalid values become `video`. |
+| `output_filename` | no | auto | Optional output filename. Empty value creates `platform-YYYYMMDD-HHMMSS.mp4` or `.zip`. |
+| `chat_id` | no | secret fallback | Final Telegram destination. |
+| `progress_chat_id` | no | final chat | Progress-message chat. |
+| `progress_message_id` | no | auto-create | Existing progress message to edit. |
+| `reply_to_message_id` | no | empty | Optional Telegram message id to reply to when sending the final output. |
+| `dispatch_key` | no | `manual` | Bot-side tracking key used in the run name. Not exported as a job output. |
+
+### Output behavior
+
+| `send_as` | Telegram method | Final file |
+|:---:|:---:|:---:|
+| `video` | `sendVideo` | `.mp4` |
+| `document` | `sendDocument` | `.mp4` |
+| `zip` | `sendDocument` | `.zip` |
+
+### Compression behavior
+
+The workflow converts `compression_level` into CRF, preset, audio bitrate, max height, maxrate, and bufsize. The final MP4 uses H.264/AAC, `yuv420p`, `avc1`, and `+faststart`.
+
+Low compression levels such as `21` or `30` prioritize quality and can make already heavily compressed source videos larger. Higher values such as `75` and `100` are intended for smaller output.
+
+### Naming behavior
+
+When `output_filename` is empty, the workflow uses platform and Cairo time:
+
+```text
+platform-YYYYMMDD-HHMMSS.mp4
+platform-YYYYMMDD-HHMMSS.zip
+```
+
+When `output_filename` is provided, the extension is normalized to `.mp4` for `video`/`document` and `.zip` for `zip`.
+
 ## Shared limitations
 
 - No workflow currently exposes `workflow_call`.
-- Dedicated workflows do not support document output.
+- Dedicated YouTube, TikTok, and Facebook workflows do not support document output.
+- `video-compress.yml` supports `video`, `document`, and `zip` output modes, but it does not support `document_mode`.
 - Dedicated workflows duplicate helper logic instead of sharing common scripts.
 - The generic workflow handles more cases but is larger and more complex.
 - Platform extraction depends on upstream websites and `yt-dlp` behavior.

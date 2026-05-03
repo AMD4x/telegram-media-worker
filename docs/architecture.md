@@ -95,7 +95,7 @@ This path is simpler and does not require `TELEGRAM_API_ID` or `TELEGRAM_API_HAS
 
 ### Local Bot API
 
-Used by all dedicated platform workflows and by `remote-media.yml` when large files need it.
+Used by all dedicated platform workflows and by `remote-media.yml` or `video-compress.yml` when large files need it.
 
 The workflow starts:
 
@@ -116,17 +116,18 @@ http://127.0.0.1:8081/bot<TOKEN>
 
 The workflow waits for the local server to respond before upload. If it does not become ready, the run fails.
 
-## Size constants used by the generic workflow
+## Size constants used by remote workflows
 
-`remote-media.yml` uses these effective size constants:
+`remote-media.yml` and `video-compress.yml` use these effective size constants where applicable:
 
 | Constant | Value | Meaning |
 |---|:---:|---|
 | `DIRECT_TELEGRAM_MAX_BYTES` | `50,000,000` | Small-file threshold for Public Bot API. |
 | `LOCAL_BOT_API_MAX_BYTES` | `2,000,000,000` | Effective Local Bot API upload ceiling used by workflows. |
 | `DOCUMENT_SPLIT_PART_BYTES` | `1,850,000,000` | Target size for split ZIP parts. |
-| `TELEGRAM_TARGET_MAX_BYTES` | `1,950,000,000` | Target size used when compressing video to fit below the Local Bot API limit. |
+| `TELEGRAM_TARGET_MAX_BYTES` | `1,950,000,000` | Target size used by the generic workflow when compressing video to fit below the Local Bot API limit. |
 | `YTDLP_MAX_FILESIZE` | `2000M` | Download cap used for non-document `yt-dlp` video downloads in the generic workflow. |
+| `PUBLIC_BOT_API_MAX_BYTES` | `50,000,000` | Public Bot API threshold used by `video-compress.yml` before Local Bot API is selected. |
 
 ## Video preparation architecture
 
@@ -184,14 +185,28 @@ TikTok uses a simpler compatibility check:
 
 It tries to avoid unnecessary re-encoding, but if a candidate is not compatible and can be used as a source, it may transcode to Telegram-compatible MP4.
 
+### Video Compress workflow
+
+`video-compress.yml` always creates a new compressed MP4 using `ffmpeg` and settings derived from `compression_level`:
+
+- H.264 video through `libx264`,
+- AAC audio,
+- `yuv420p` pixel format,
+- `avc1` video tag,
+- `+faststart`,
+- max-height cap based on compression strength,
+- optional ZIP wrapper when `send_as=zip`.
+
+It is isolated in `scripts/video_compress/video_compress_worker.py` and does not call existing workflow scripts.
+
 ## Document architecture
 
-Only `remote-media.yml` supports document mode.
+`remote-media.yml` supports document mode through `document_mode`. `video-compress.yml` also supports `send_as=document`, but it does not use `document_mode`; it sends the compressed MP4 as a Telegram document.
 
-`send_as=document` enables two modes:
+In `remote-media.yml`, `send_as=document` enables two modes:
 
 | Mode | Behavior |
-|---|---|
+|:---:|---|
 | `document_mode=original` | Send the downloaded file as a document after validation. |
 | `document_mode=zip` | Wrap the downloaded file in a ZIP before sending. |
 

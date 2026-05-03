@@ -259,3 +259,27 @@ Do not include:
 - private URLs,
 - full raw workflow logs,
 - personal media links.
+
+## `video-compress.yml` output is larger than the source
+
+This can happen with low compression levels such as `21` or `30`, especially when the source is already very small or heavily compressed.
+
+Try:
+
+- `compression_level=50` for balanced output,
+- `compression_level=75` for strong compression,
+- `compression_level=100` for the smallest practical output.
+
+## `send_as=document` still shows a video preview
+
+`video-compress.yml` sends document mode through `sendDocument` with content-type detection disabled. Some Telegram clients may still show a preview for MP4 files.
+
+For a guaranteed file-wrapper experience, use:
+
+```text
+send_as=zip
+```
+
+## `compression_level must be between 1 and 100`
+
+The workflow expects an integer from `1` to `100`. It treats the value as compression strength, not quality.
