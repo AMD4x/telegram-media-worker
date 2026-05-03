@@ -1,5 +1,3 @@
-"""Repack selected package items into a Telegram-ready ZIP."""
-
 from __future__ import annotations
 
 import argparse
@@ -393,25 +391,6 @@ def make_zip(stage_dir: Path, zip_path: Path) -> tuple[int, int]:
             zf.write(path, path.relative_to(stage_dir).as_posix())
     return len(files), zip_path.stat().st_size
 
-
-def build_repack_report(manifest: dict[str, Any], selected: list[dict[str, Any]], output_name: str, output_size: int) -> str:
-    source = manifest.get("source", {})
-    lines = []
-    for item in selected[:25]:
-        lines.append(f"{item.get('index')}. <code>{html_escape(item.get('path') or item.get('name'))}</code>")
-    if len(selected) > 25:
-        lines.append(f"… +{len(selected) - 25} more")
-    return (
-        "📦 <b>Package Repacker</b>\n\n"
-        f"🧭 <b>Source Type:</b> <code>{html_escape(source.get('kind', 'unknown'))}</code>\n"
-        f"🧩 <b>Included Items:</b> <code>{len(selected)}</code>\n"
-        f"📄 <b>Output:</b> <code>{html_escape(output_name)}</code>\n"
-        f"📏 <b>Size:</b> <code>{html_escape(format_bytes(output_size))}</code>\n\n"
-        "🧩 <b>Included:</b>\n"
-        + "\n".join(lines)
-    )
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Repack selected package items into ZIP")
     add_common_cli(parser)
@@ -512,7 +491,7 @@ def main() -> int:
 
         telegram_delete_progress(ctx)
 
-    print(json.dumps(repack_manifest, ensure_ascii=False, indent=2))
+    print("PACKAGE_REPACK_COMPLETED")
     return 0
 
 
