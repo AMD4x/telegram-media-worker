@@ -27,6 +27,9 @@ work/
 *.mp3
 *.webm
 *.part
+.package_manifests/*.json
+.package_manifests/*.enc
+!.package_manifests/.gitkeep
 
 # OS/editor
 .DS_Store
