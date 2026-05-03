@@ -1,5 +1,3 @@
-"""Shared helpers for Package Inspector / Repacker workflows."""
-
 from __future__ import annotations
 
 import argparse
@@ -141,7 +139,7 @@ def run_cmd(cmd: list[str], *, cwd: str | Path | None = None, timeout: int | Non
         check=False,
     )
     if check and result.returncode != 0:
-        raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(cmd)}\n{result.stdout[-4000:]}")
+        raise RuntimeError(f"Package command failed with exit code {result.returncode}.")
     return result
 
 
@@ -199,7 +197,7 @@ def download_file(url: str, dest: Path, *, timeout: int = 21600) -> Path:
     with urllib.request.urlopen(req, timeout=timeout) as resp, dest.open("wb") as fh:
         shutil.copyfileobj(resp, fh, length=1024 * 1024)
     if not dest.exists() or dest.stat().st_size <= 0:
-        raise RuntimeError(f"Downloaded file is empty: {dest}")
+        raise RuntimeError("Downloaded file is empty.")
     return dest
 
 
@@ -471,7 +469,6 @@ def telegram_edit_final(ctx: TelegramContext, title: str, body: str, *, status: 
     )
 
 def telegram_delete_progress(ctx: TelegramContext) -> None:
-    """حذف رسالة التقدّم بعد نجاح الإرسال لتقليل ضوضاء Telegram."""
     if not (ctx.token and ctx.progress_chat_id and ctx.progress_message_id):
         return
 
@@ -532,7 +529,7 @@ def telegram_send_document(ctx: TelegramContext, path: Path, display_name: str, 
         print("TELEGRAM_DOCUMENT_SKIPPED=missing_credentials")
         return False
     if not path.exists() or path.stat().st_size <= 0:
-        raise RuntimeError(f"Cannot send missing/empty document: {path}")
+        raise RuntimeError("Cannot send missing or empty document.")
     size = path.stat().st_size
     display = sanitize_filename(display_name, path.name)
     if size > LOCAL_BOT_API_MAX_BYTES:
