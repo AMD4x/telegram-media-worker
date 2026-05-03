@@ -8,6 +8,7 @@ from the existing workflows while keeping the same progress-message philosophy.
 from __future__ import annotations
 
 import atexit
+from datetime import datetime, timezone
 import html
 import json
 import math
@@ -34,8 +35,14 @@ def env(name: str, default: str = "") -> str:
 
 
 def mask(value: str) -> None:
-    if value:
-        print(f"::add-mask::{value}")
+    if not value:
+        return
+
+    # Mask each line separately to avoid leaking multiline secrets such as cookies.
+    for line in str(value).replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = line.strip()
+        if line:
+            print(f"::add-mask::{line}")
 
 
 def run_url() -> str:
@@ -65,6 +72,20 @@ def progress_bar(percent: int) -> str:
 
 def safe_text(value: str) -> str:
     return html.escape(str(value), quote=False)
+
+
+def default_output_base(platform: str) -> str:
+    try:
+        from zoneinfo import ZoneInfo
+
+        now = datetime.now(ZoneInfo("Africa/Cairo"))
+    except Exception:
+        now = datetime.now(timezone.utc)
+
+    safe_platform = re.sub(r"[^A-Za-z0-9_-]+", "-", (platform or "generic").lower())
+    safe_platform = safe_platform.strip("-") or "generic"
+
+    return f"{safe_platform}-{now:%Y%m%d-%H%M%S}"
 
 
 def clean_filename(value: str, fallback: str, ext: str) -> str:
@@ -531,10 +552,15 @@ def prepare_cookies(platform: str) -> list[str]:
         secret_name = "YOUTUBE_COOKIES_TXT"
     elif platform == "facebook":
         secret_name = "FACEBOOK_COOKIES_TXT"
-    if not secret_name or not env(secret_name):
+
+    cookies_text = env(secret_name) if secret_name else ""
+    if not secret_name or not cookies_text:
         return []
+
     cookie_path = Path(env("RUNNER_TEMP", tempfile.gettempdir())) / f"{platform}-cookies.txt"
-    cookie_path.write_text(env(secret_name) + "\n", encoding="utf-8")
+    cookie_path.write_text(cookies_text + "\n", encoding="utf-8")
+    cookie_path.chmod(0o600)
+
     return ["--cookies", str(cookie_path)]
 
 
@@ -685,8 +711,8 @@ def transcode(input_file: Path, output_file: Path, settings: CompressionSettings
         raise RuntimeError("Compressed output is missing or empty.")
 
 
-def package_zip(mp4_file: Path, requested_name: str) -> Path:
-    zip_name = clean_filename(requested_name, "compressed-video.zip", ".zip")
+def package_zip(mp4_file: Path, requested_name: str, fallback_name: str = "compressed-video.zip") -> Path:
+    zip_name = clean_filename(requested_name, fallback_name, ".zip")
     zip_path = WORK_DIR / zip_name
     inner_base = os.path.splitext(zip_name)[0] or "compressed-video"
     inner_name = clean_filename(f"{inner_base}.mp4", "compressed-video.mp4", ".mp4")
@@ -733,7 +759,20 @@ def main() -> int:
     progress_chat_id = env("PROGRESS_CHAT_ID") or target_chat_id
     progress_message_id = env("PROGRESS_MESSAGE_ID")
 
-    for value in (media_url, requested_name, dispatch_key, telegram_token, target_chat_id, progress_chat_id, progress_message_id, reply_to_message_id, env("TELEGRAM_API_ID"), env("TELEGRAM_API_HASH")):
+    for value in (
+        media_url,
+        requested_name,
+        dispatch_key,
+        telegram_token,
+        target_chat_id,
+        progress_chat_id,
+        progress_message_id,
+        reply_to_message_id,
+        env("TELEGRAM_API_ID"),
+        env("TELEGRAM_API_HASH"),
+        env("YOUTUBE_COOKIES_TXT"),
+        env("FACEBOOK_COOKIES_TXT"),
+    ):
         mask(value)
 
     settings = compression_settings(env("COMPRESSION_LEVEL_INPUT", "50"))
@@ -753,10 +792,13 @@ def main() -> int:
         telegram.update_progress(8, "Preparing", "Preparing video compression worker...")
 
         platform, referer = detect_platform(media_url)
+        default_base_name = default_output_base(platform)
+        default_mp4_name = f"{default_base_name}.mp4"
+        default_zip_name = f"{default_base_name}.zip"
         cookies_args = prepare_cookies(platform)
         print(f"PLATFORM={platform}")
         print(f"SEND_AS={send_as}")
-        print(f"DISPATCH_KEY={dispatch_key}")
+        print("DISPATCH_KEY=provided" if dispatch_key else "DISPATCH_KEY=empty")
         print(f"COMPRESSION_LEVEL={settings.level}")
         print(f"COMPRESSION_CRF={settings.crf}")
         print(f"COMPRESSION_PRESET={settings.preset}")
@@ -778,7 +820,7 @@ def main() -> int:
             raise RuntimeError("Downloaded file does not contain a readable video stream.")
 
         telegram.update_progress(55, "Compressing", "Compressing video with ffmpeg...")
-        compressed_name = clean_filename(requested_name, "compressed-video.mp4", ".mp4")
+        compressed_name = clean_filename(requested_name, default_mp4_name, ".mp4")
         compressed_path = WORK_DIR / compressed_name
         transcode(source_file, compressed_path, settings)
         video_probe = probe(compressed_path)
@@ -789,7 +831,7 @@ def main() -> int:
         final_path = compressed_path
         if send_as == "zip":
             telegram.update_progress(70, "Packaging", "Packaging compressed video as ZIP...")
-            final_path = package_zip(compressed_path, requested_name)
+            final_path = package_zip(compressed_path, requested_name, default_zip_name)
             final_send_as = "document"
         elif send_as == "document":
             telegram.update_progress(70, "Packaging", "Preparing compressed video as document...")
@@ -830,7 +872,6 @@ def main() -> int:
                 "preset": settings.preset,
                 "audio_bitrate": settings.audio_bitrate,
                 "max_height": settings.max_height,
-                "dispatch_key": dispatch_key,
             }
         )
 
