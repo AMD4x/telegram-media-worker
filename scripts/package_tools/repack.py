@@ -12,6 +12,7 @@ import binascii
 import gzip
 import re
 import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -183,6 +184,23 @@ def stage_torrent(source_url: str, selected: list[dict[str, Any]], stage_dir: Pa
 
         return None
 
+    def extract_magnet_trackers(value: str) -> list[str]:
+        trackers: list[str] = []
+
+        try:
+            parsed = urllib.parse.urlparse(value)
+            for key, raw_tracker in urllib.parse.parse_qsl(parsed.query, keep_blank_values=False):
+                if key != "tr":
+                    continue
+
+                tracker = urllib.parse.unquote(str(raw_tracker or "")).strip()
+                if tracker and tracker not in trackers:
+                    trackers.append(tracker)
+        except Exception:
+            return []
+
+        return trackers
+
     def find_latest_torrent_file(*roots: Path) -> Path | None:
         candidates: list[Path] = []
 
@@ -263,6 +281,10 @@ def stage_torrent(source_url: str, selected: list[dict[str, Any]], stage_dir: Pa
 
             runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp")
             dht_file = runner_temp / "aria2-dht-package-repack.dat"
+            tracker_args = []
+            trackers = extract_magnet_trackers(source_url)
+            if trackers:
+                tracker_args = [f"--bt-tracker={','.join(trackers)}"]
 
             metadata_cmd = [
                 "timeout",
@@ -281,6 +303,7 @@ def stage_torrent(source_url: str, selected: list[dict[str, Any]], stage_dir: Pa
                 "--bt-stop-timeout=180",
                 "--summary-interval=0",
                 "--console-log-level=warn",
+                *tracker_args,
                 source_url,
             ]
 
@@ -311,6 +334,12 @@ def stage_torrent(source_url: str, selected: list[dict[str, Any]], stage_dir: Pa
 
     select_arg = ",".join(torrent_indexes)
 
+    tracker_args = []
+    if source_lower.startswith("magnet:?"):
+        trackers = extract_magnet_trackers(source_url)
+        if trackers:
+            tracker_args = [f"--bt-tracker={','.join(trackers)}"]
+
     cmd = [
         "aria2c",
         "--dir",
@@ -333,6 +362,7 @@ def stage_torrent(source_url: str, selected: list[dict[str, Any]], stage_dir: Pa
         "--auto-file-renaming=false",
         "--summary-interval=30",
         "--console-log-level=warn",
+        *tracker_args,
         f"--select-file={select_arg}",
         torrent_source,
     ]
