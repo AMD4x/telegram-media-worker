@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
           if command -v apt-get >/dev/null 2>&1; then
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends aria2 p7zip-full libarchive-tools unrar-free unzip ca-certificates
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends aria2 p7zip-full libarchive-tools unrar-free unzip ca-certificates openssl
           fi
           python3 --version
           aria2c --version | head -n 1 || true
@@ -87,6 +87,7 @@ jobs:
           [ -n "${ADMIN_ID:-}" ] && echo "::add-mask::${ADMIN_ID}"
           [ -n "${PROGRESS_CHAT_ID:-}" ] && echo "::add-mask::${PROGRESS_CHAT_ID}"
           [ -n "${PROGRESS_MESSAGE_ID:-}" ] && echo "::add-mask::${PROGRESS_MESSAGE_ID}"
+          [ -n "${PACKAGE_MANIFEST_KEY:-}" ] && echo "::add-mask::${PACKAGE_MANIFEST_KEY}"
 
           python3 scripts/package_tools/inspect.py \
             --source-url "$SOURCE_URL" \
@@ -97,14 +98,22 @@ jobs:
             --manifest-out "manifest.json" \
             --send-telegram "${SEND_TELEGRAM:-true}"
 
-      - name: Publish manifest for bot
+      - name: Publish encrypted manifest for bot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
           REF_NAME: ${{ github.ref_name }}
           DISPATCH_KEY: ${{ inputs.dispatch_key }}
+          PACKAGE_MANIFEST_KEY: ${{ secrets.PACKAGE_MANIFEST_KEY }}
         run: |
           set -euo pipefail
+          [ -n "${PACKAGE_MANIFEST_KEY:-}" ] && echo "::add-mask::${PACKAGE_MANIFEST_KEY}"
+
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 \
+            -salt \
+            -pass env:PACKAGE_MANIFEST_KEY \
+            -in manifest.json \
+            -out manifest.enc
 
           python3 - <<'PY'
           import base64
@@ -124,9 +133,9 @@ jobs:
               for c in dispatch_key
           )[:160] or "manual"
 
-          path = f".package_manifests/{safe_key}.json"
+          path = f".package_manifests/{safe_key}.enc"
 
-          with open("manifest.json", "rb") as f:
+          with open("manifest.enc", "rb") as f:
               content_b64 = base64.b64encode(f.read()).decode("ascii")
 
           api_base = f"https://api.github.com/repos/{repo}/contents/{urllib.parse.quote(path)}"
@@ -151,7 +160,7 @@ jobs:
                   raise
 
           payload = {
-              "message": f"Store package manifest {safe_key}",
+              "message": "Store package manifest",
               "content": content_b64,
               "branch": ref_name,
           }
@@ -168,8 +177,7 @@ jobs:
           )
 
           with urllib.request.urlopen(put_req, timeout=45) as resp:
-              result = json.loads(resp.read().decode("utf-8"))
+              json.loads(resp.read().decode("utf-8"))
 
-          print("MANIFEST_STORE_PATH=" + path)
-          print("MANIFEST_STORE_SHA=" + str((result.get("content") or {}).get("sha") or ""))
+          print("MANIFEST_STORE_OK=1")
           PY
