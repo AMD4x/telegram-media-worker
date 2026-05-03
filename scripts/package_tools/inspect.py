@@ -351,7 +351,6 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
 
         runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp")
         dht_file = runner_temp / "aria2-dht-package-inspect.dat"
-        fetch_log = work_dir / "magnet-metadata-fetch.log"
 
         metadata_cmd = [
             "timeout",
@@ -379,15 +378,6 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
             timeout=300,
             check=False,
         )
-
-        try:
-            fetch_log.write_text(
-                (metadata_result.stdout or "") + "\n" + (metadata_result.stderr or ""),
-                encoding="utf-8",
-                errors="replace",
-            )
-        except Exception:
-            pass
 
         torrent_file = find_latest_torrent_file(work_dir, runner_temp, Path.cwd())
 
@@ -570,13 +560,12 @@ def main() -> int:
     report = build_report(manifest)
     if args.send_telegram == "true":
         telegram_send_message(ctx, report)
-        telegram_send_document(ctx, out, "manifest.json", manifest_caption(manifest))
         telegram_edit_final(
             ctx,
             "✅ <b>GitHub Remote</b>",
-            f"📦 <b>Package Inspector completed</b>\n🧩 <b>Items:</b> <code>{len(items)}</code>\n📄 <b>Manifest:</b> <code>manifest.json</code>\n",
+            "📦 <b>Package Inspector completed</b>\n",
         )
-    print(json.dumps(manifest, ensure_ascii=False, indent=2))
+    print("PACKAGE_INSPECT_COMPLETED")
     progress_stage(ctx, "completed", 100, "Completed", "Package_inspection_completed")
     return 0
 
