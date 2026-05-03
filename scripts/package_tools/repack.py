@@ -440,7 +440,7 @@ def main() -> int:
     output_name = ensure_zip_extension(args.output_filename, "package_output.zip")
     output_path = work_dir / output_name
     progress_stage(ctx, "repacking", 70, "Repacking", "Building_output_zip")
-    file_count, output_size = make_zip(stage_dir, output_path)
+    _, output_size = make_zip(stage_dir, output_path)
 
     progress_stage(ctx, "uploading", 85, "Uploading", "Sending_repacked_zip")
     if args.send_telegram == "true":
