@@ -10,13 +10,14 @@ This repository runs temporary media jobs on GitHub-hosted runners, prepares the
 - Sends media to Telegram as video or document, depending on workflow support.
 - Supports progress updates by editing an existing Telegram message.
 - Uses `yt-dlp`, `ffmpeg`, `ffprobe`, `curl`, Python helpers, and Telegram Bot API / Telegram Local Bot API.
-- Supports a generic `remote-media.yml` workflow plus dedicated workflows for YouTube, TikTok, Facebook, and torrent document delivery.
+- Supports a generic `remote-media.yml` workflow, dedicated workflows for YouTube, TikTok, Facebook, torrent document delivery, and remote video compression.
 - Can be started manually from GitHub Actions or programmatically from a Telegram bot through `workflow_dispatch`.
 - Masks sensitive inputs in GitHub Actions logs where possible.
 - Prepares Telegram/iPhone-compatible video output when the selected workflow includes compatibility preparation.
 - Supports large Telegram uploads through Local Bot API when configured.
 - Supports document ZIP mode and split ZIP parts in the generic workflow.
 - Supports admin-oriented torrent document delivery with file listing, selected file indexes, all-file mode, safe small-document delivery, and Telegram-safe split document parts.
+- Supports remote video compression through `video-compress.yml` with `video`, `document`, and `zip` output modes.
 - Includes an optional Windows Explorer helper, AMD4x Merge, for joining downloaded split parts from the right-click menu.
 
 ## Why this exists
@@ -32,6 +33,7 @@ Small home servers, Raspberry Pi bots, and lightweight Telegram bot hosts are go
 | `.github/workflows/tiktok-direct-local-api.yml` | TikTok direct video sender | Video only | Local Bot API | No | Tries direct TikTok resolver first, then `yt-dlp` fallbacks, while requiring audio and Telegram-compatible video. |
 | `.github/workflows/facebook-long-video-local-api.yml` | Facebook long-video sender | Video only | Local Bot API | No | Facebook-focused path with optional cookies and Telegram/iPhone compatibility preparation. |
 | `.github/workflows/torrent-document-local-api.yml` | Torrent document sender | Document only | Public Bot API for small documents, Local Bot API for large documents and parts | Yes | Lists torrent contents, supports selected file indexes, all-file mode, safe upload filenames, and split document delivery. |
+| `.github/workflows/video-compress.yml` | Remote video compressor | Video, document, or ZIP | Public Bot API for small files, Local Bot API for larger files when needed | ZIP wrapper only | Compresses a source video using `compression_level` from 1 to 100, then sends the result to Telegram. |
 
 ## Quick routing guide
 
@@ -40,10 +42,11 @@ Small home servers, Raspberry Pi bots, and lightweight Telegram bot hosts are go
 | Direct downloadable file to Telegram as a document | `remote-media.yml` with `send_as=document` |
 | Any URL that should be zipped before sending | `remote-media.yml` with `send_as=document` and `document_mode=zip`; oversized ZIP output may be restored on Windows with AMD4x Merge |
 | Generic platform video | `remote-media.yml` with `send_as=video` |
+| Compress any supported video remotely | `video-compress.yml` with `compression_level` and `send_as` |
 | YouTube video | `youtube-video-local-api.yml` for video-only output; `remote-media.yml` for document mode |
 | TikTok video | `tiktok-direct-local-api.yml` for video-only output; `remote-media.yml` for document mode |
 | Facebook video | `facebook-long-video-local-api.yml` for video-only output; `remote-media.yml` for document mode |
-| Instagram, X/Twitter, Reddit | `remote-media.yml` only; no dedicated workflow currently exists |
+| Instagram, X/Twitter, Reddit | `remote-media.yml`; use `video-compress.yml` when compression is required |
 | Magnet links or direct `.torrent` files | `torrent-document-local-api.yml` with `file_mode=list`, then `file_mode=selected` or `file_mode=all` |
 
 ## Required secrets
@@ -58,8 +61,8 @@ Repository Settings -> Secrets and variables -> Actions -> Repository secrets
 |---|---|---|
 | `TELEGRAM_TOKEN` | All workflows that send progress or final Telegram messages | Telegram bot token from BotFather. |
 | `TELEGRAM_CHAT_ID` | All final-send workflows | Destination chat, group, or channel ID. |
-| `TELEGRAM_API_ID` | Local Bot API workflows and large uploads through `remote-media.yml` | Telegram API ID used by `telegram-bot-api --local`. |
-| `TELEGRAM_API_HASH` | Local Bot API workflows and large uploads through `remote-media.yml` | Telegram API hash used by `telegram-bot-api --local`. |
+| `TELEGRAM_API_ID` | Local Bot API workflows and large uploads through `remote-media.yml` or `video-compress.yml` | Telegram API ID used by `telegram-bot-api --local`. |
+| `TELEGRAM_API_HASH` | Local Bot API workflows and large uploads through `remote-media.yml` or `video-compress.yml` | Telegram API hash used by `telegram-bot-api --local`. |
 | `YOUTUBE_COOKIES_TXT` | Optional for YouTube paths | Netscape-format cookies for restricted, account-sensitive, age-gated, or region-gated YouTube media. |
 | `FACEBOOK_COOKIES_TXT` | Optional for Facebook paths | Netscape-format cookies for restricted or account-sensitive Facebook media. |
 
@@ -86,8 +89,9 @@ See:
 | `media_url` | All media workflows except `torrent-document-local-api.yml` | Source media/file URL. |
 | `torrent_url` | `torrent-document-local-api.yml` only | Magnet link or direct `.torrent` URL. |
 | `max_height` | `remote-media.yml`, YouTube, TikTok | Requested maximum video height. `remote-media.yml` exposes fixed choices. Dedicated workflows accept a string and normalize invalid values to `auto`. |
-| `send_as` | Fully used only by `remote-media.yml` | `video` or `document`. Dedicated platform workflows keep it only as an ignored compatibility input. |
-| `output_filename` | Fully used only by document-capable paths | Requested output document/ZIP filename. Dedicated platform workflows keep it only as an ignored compatibility input. |
+| `send_as` | `remote-media.yml`, `video-compress.yml` | `remote-media.yml`: `video` or `document`. `video-compress.yml`: `video`, `document`, or `zip`. Dedicated platform workflows keep it only as an ignored compatibility input. |
+| `output_filename` | Document-capable paths and `video-compress.yml` | Requested output document/ZIP/video filename. `video-compress.yml` normalizes it to `.mp4` or `.zip`. Dedicated platform workflows keep it only as an ignored compatibility input. |
+| `compression_level` | `video-compress.yml` only | Compression strength from `1` to `100`; higher means stronger compression and smaller output. |
 | `document_mode` | `remote-media.yml` only | `zip` or `original`. Invalid values fall back to `zip`. |
 | `progress_chat_id` | Workflows with progress updates | Chat ID containing the progress message to edit. |
 | `progress_message_id` | Workflows with progress updates | Telegram message ID to edit. |
@@ -99,6 +103,7 @@ See:
 ## Important capability rules
 
 - `remote-media.yml` is currently the only workflow with real `document_mode` support.
+- `video-compress.yml` has its own `send_as` modes: `video`, `document`, and `zip`; it does not use `document_mode`.
 - Dedicated platform workflows always send videos through `sendVideo`.
 - In dedicated platform workflows, `send_as` and `output_filename` are compatibility inputs only and are not used to change behavior.
 - Large uploads require `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` because the worker must start Telegram Local Bot API.
@@ -115,6 +120,7 @@ See:
 Detailed behavior is documented in:
 
 - [`docs/workflows.md`](docs/workflows.md)
+- [`docs/video-compress.md`](docs/video-compress.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/supported-platforms.md`](docs/supported-platforms.md)
 - [`docs/usage-from-bot.md`](docs/usage-from-bot.md)
@@ -138,20 +144,21 @@ The workflows mask sensitive inputs where possible, but masking is not a substit
 
 ## Project status
 
-The repository currently contains five workflow families:
+The repository currently contains six workflow families:
 
 - Generic remote media/file worker.
 - YouTube Local Bot API video worker.
 - TikTok Direct Local Bot API video worker.
 - Facebook Long Video Local Bot API video worker.
 - Torrent document worker with file listing, selected indexes, all-file mode, safe small-document delivery, safe upload filenames, and split raw-part document delivery.
+- Video compression worker with `video`, `document`, and `zip` Telegram output modes.
 
 Known limitations:
 
 - There is no `workflow_call` interface yet.
 - Platform workflows duplicate progress and compatibility helper logic.
 - Dedicated platform workflows do not support `document_mode`.
-- Instagram, X/Twitter, and Reddit are handled only by the generic workflow and have no dedicated cookie path.
+- Instagram, X/Twitter, and Reddit are handled by the generic workflow; they can also be processed by `video-compress.yml` when remote compression is required.
 - TikTok extraction depends on external platform behavior and may require fallback paths.
 - Torrent delivery is document-only and does not perform media conversion or Telegram/iPhone video compatibility preparation. Split torrent parts are raw binary chunks, not archives, and can be restored manually or with AMD4x Merge on Windows.
 
