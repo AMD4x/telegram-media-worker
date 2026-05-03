@@ -22,7 +22,7 @@ on:
         default: "manual"
         type: string
       send_telegram:
-        description: "Send report and manifest to Telegram"
+        description: "Send package inspection report to Telegram"
         required: false
         default: "true"
         type: choice
