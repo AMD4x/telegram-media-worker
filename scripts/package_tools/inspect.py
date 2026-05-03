@@ -489,7 +489,7 @@ def build_report(manifest: dict[str, Any]) -> str:
         "🧩 <b>Item list:</b>\n"
         f"{compact_items_for_telegram(items)}"
         f"{warning_text}\n\n"
-        "📄 <b>Manifest:</b> Ready for package-repack.yml."
+       "📄 <b>Package Browser:</b> Ready."
     )
 
 
