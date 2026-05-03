@@ -536,7 +536,7 @@ def main() -> int:
     else:
         items = inspect_direct_file(source_url, head)
 
-    progress_stage(ctx, "manifest", 70, "Building", "Building_manifest_json")
+    progress_stage(ctx, "manifest", 70, "Building", "Building_package_manifest")
     manifest = build_manifest(
         source_url,
         kind,
@@ -548,7 +548,7 @@ def main() -> int:
     out = Path(args.manifest_out)
     write_json(out, manifest)
 
-    progress_stage(ctx, "uploading", 85, "Uploading", "Sending_manifest_report")
+    progress_stage(ctx, "uploading", 85, "Uploading", "Preparing_encrypted_manifest")
     report = build_report(manifest)
     if args.send_telegram == "true":
         telegram_send_message(ctx, report)
