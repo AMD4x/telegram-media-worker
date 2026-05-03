@@ -38,10 +38,6 @@ on:
         description: "Telegram progress message id"
         required: false
         type: string
-      reply_to_message_id:
-        description: "Reserved for future bot integration; currently kept as compatibility input"
-        required: false
-        type: string
       dispatch_key:
         description: "Dispatch key for bot-side correlation"
         required: false
@@ -107,7 +103,6 @@ jobs:
           SPLIT_PART_MIB: ${{ inputs.split_part_mib }}
           PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
           PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
-          REPLY_TO_MESSAGE_ID: ${{ inputs.reply_to_message_id }}
           DISPATCH_KEY: ${{ inputs.dispatch_key }}
           SEND_TELEGRAM: ${{ inputs.send_telegram }}
         run: |
@@ -120,7 +115,6 @@ jobs:
           [ -n "${ADMIN_ID:-}" ] && echo "::add-mask::${ADMIN_ID}"
           [ -n "${PROGRESS_CHAT_ID:-}" ] && echo "::add-mask::${PROGRESS_CHAT_ID}"
           [ -n "${PROGRESS_MESSAGE_ID:-}" ] && echo "::add-mask::${PROGRESS_MESSAGE_ID}"
-          [ -n "${REPLY_TO_MESSAGE_ID:-}" ] && echo "::add-mask::${REPLY_TO_MESSAGE_ID}"
 
           python3 scripts/package_tools/repack.py \
             --source-url "$SOURCE_URL" \
