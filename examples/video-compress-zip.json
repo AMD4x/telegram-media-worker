@@ -1,0 +1,12 @@
+{
+  "ref": "main",
+  "inputs": {
+    "media_url": "https://example.com/video.mp4",
+    "compression_level": "75",
+    "send_as": "zip",
+    "output_filename": "compressed-video.zip",
+    "progress_chat_id": "123456789",
+    "progress_message_id": "63",
+    "dispatch_key": "123456789-63-video-compress"
+  }
+}
