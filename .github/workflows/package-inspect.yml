@@ -87,7 +87,6 @@ jobs:
           [ -n "${ADMIN_ID:-}" ] && echo "::add-mask::${ADMIN_ID}"
           [ -n "${PROGRESS_CHAT_ID:-}" ] && echo "::add-mask::${PROGRESS_CHAT_ID}"
           [ -n "${PROGRESS_MESSAGE_ID:-}" ] && echo "::add-mask::${PROGRESS_MESSAGE_ID}"
-          [ -n "${PACKAGE_MANIFEST_KEY:-}" ] && echo "::add-mask::${PACKAGE_MANIFEST_KEY}"
 
           python3 scripts/package_tools/inspect.py \
             --source-url "$SOURCE_URL" \
@@ -108,6 +107,11 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "${PACKAGE_MANIFEST_KEY:-}" ] && echo "::add-mask::${PACKAGE_MANIFEST_KEY}"
+
+          if [ -z "${PACKAGE_MANIFEST_KEY:-}" ]; then
+            echo "PACKAGE_MANIFEST_KEY_MISSING=1"
+            exit 1
+          fi
 
           openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 \
             -salt \
