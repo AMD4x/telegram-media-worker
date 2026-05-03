@@ -75,7 +75,6 @@ jobs:
       preset: ${{ steps.video_compress.outputs.preset }}
       audio_bitrate: ${{ steps.video_compress.outputs.audio_bitrate }}
       max_height: ${{ steps.video_compress.outputs.max_height }}
-      dispatch_key: ${{ steps.video_compress.outputs.dispatch_key }}
 
     defaults:
       run:
