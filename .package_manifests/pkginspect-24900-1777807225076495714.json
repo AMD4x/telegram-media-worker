@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "feature": "package-inspector-repacker",
+  "manifest_id": "pkg-pkginspect-24900-1777807225076495714-1777807251",
+  "created_at": "2026-05-03T11:20:51Z",
+  "dispatch_key": "pkginspect-24900-1777807225076495714",
+  "source": {
+    "url": "magnet:?xt=urn:btih:8A31A1E93C3A474400597896D85798D0422022A2&dn=Palestine+%2736+(2025)+1080p+WEBRip+5.1+x264+-YTS&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.tracker.cl%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&tr=udp%3A%2F%2Fexodus.desync.com%3A6969%2Fannounce&tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker.ololosh.space%3A6969%2Fannounce&tr=udp%3A%2F%2Fexplodie.org%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker-udp.gbitt.info%3A80%2Fannounce",
+    "kind": "torrent",
+    "safe_log_url": "magnet:?xt=<masked>",
+    "content_type": "",
+    "size_bytes": 0,
+    "size_text": "0 B"
+  },
+  "summary": {
+    "item_count": 0,
+    "total_size_bytes": 0,
+    "total_size_text": "0 B"
+  },
+  "items": [],
+  "warnings": [
+    "Could not fetch torrent metadata from this magnet link in time. GitHub runner may not have reached peers/trackers, or this magnet has weak availability. Try again later or use a direct .torrent file."
+  ],
+  "bot_binding": {
+    "index_base": 1,
+    "display_key": "path",
+    "keep_indexes_format": "1,2,4-6",
+    "delete_indexes_format": "2,3",
+    "rename_map_key": "path",
+    "repack_workflow": "package-repack.yml",
+    "required_repack_inputs": [
+      "source_url",
+      "keep_indexes",
+      "delete_indexes",
+      "rename_map_json",
+      "output_filename",
+      "dispatch_key"
+    ]
+  }
+}
