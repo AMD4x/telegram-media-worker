@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+"""Inspect package-like sources and produce manifest.json for bot-driven repack."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import zipfile
+from pathlib import Path
+from typing import Any
+
+from common import (
+    TelegramContext,
+    add_common_cli,
+    build_manifest,
+    compact_items_for_telegram,
+    download_file,
+    env,
+    extract_urls_from_text,
+    filename_from_url,
+    format_bytes,
+    guess_kind_from_url,
+    html_escape,
+    http_head,
+    item_from_path,
+    manifest_caption,
+    progress_stage,
+    read_url_text,
+    run_cmd,
+    safe_url_for_log,
+    sanitize_filename,
+    telegram_edit_final,
+    telegram_send_document,
+    telegram_send_message,
+    write_json,
+)
+
+
+def list_zip(path: Path) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    with zipfile.ZipFile(path) as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            items.append(item_from_path(len(items) + 1, info.filename, int(info.file_size or 0), kind="archive_member"))
+    return items
+
+
+def parse_7z_listing(text: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    block: dict[str, str] = {}
+
+    def flush() -> None:
+        if not block:
+            return
+        path = block.get("Path", "").strip()
+        folder = block.get("Folder", "-").strip() == "+"
+        if path and not folder and path not in {"Name", "----------"}:
+            size = 0
+            raw_size = block.get("Size", "0").strip()
+            if raw_size.isdigit():
+                size = int(raw_size)
+            items.append(item_from_path(len(items) + 1, path, size, kind="archive_member"))
+
+    for line in text.splitlines():
+        if not line.strip():
+            flush()
+            block = {}
+            continue
+        if " = " in line:
+            key, value = line.split(" = ", 1)
+            block[key.strip()] = value.strip()
+    flush()
+    return items
+
+
+def list_with_7z(path: Path) -> list[dict[str, Any]]:
+    result = run_cmd(["7z", "l", "-slt", str(path)], check=True)
+    return parse_7z_listing(result.stdout)
+
+
+def list_with_bsdtar(path: Path) -> list[dict[str, Any]]:
+    result = run_cmd(["bsdtar", "-tvf", str(path)], check=True)
+    items: list[dict[str, Any]] = []
+    for line in result.stdout.splitlines():
+        parts = line.split(None, 8)
+        if len(parts) < 9:
+            continue
+        mode = parts[0]
+        if mode.startswith("d"):
+            continue
+        size = int(parts[4]) if parts[4].isdigit() else 0
+        item_path = parts[8].strip()
+        if item_path:
+            items.append(item_from_path(len(items) + 1, item_path, size, kind="archive_member"))
+    return items
+
+
+def parse_aria2_show_files(text: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        match = re.match(r"^\s*(\d+)\|(.+)$", line)
+        if match:
+            path = match.group(2).strip()
+            if path and not path.lower().startswith("path/"):
+                current = item_from_path(int(match.group(1)), path, 0, kind="torrent_file")
+                items.append(current)
+            continue
+        size_match = re.match(r"^\s*\|\s*([0-9.]+)\s*([KMGT]?i?B|[KMGT]?B)\s*$", line, re.I)
+        if current and size_match:
+            current["size_text"] = f"{size_match.group(1)} {size_match.group(2)}"
+    # Re-number defensively because aria2 indexes are what repack needs, but manifest order must be stable.
+    for pos, item in enumerate(items, start=1):
+        item["torrent_index"] = int(item.get("index") or pos)
+        item["index"] = pos
+    return items
+
+
+def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    warnings: list[str] = []
+    work_dir.mkdir(parents=True, exist_ok=True)
+    if source_url.lower().startswith("magnet:?"):
+        cmd = [
+            "aria2c",
+            "--show-files=true",
+            "--bt-metadata-only=true",
+            "--bt-save-metadata=true",
+            "--summary-interval=0",
+            "--allow-overwrite=true",
+            "--dir",
+            str(work_dir),
+            source_url,
+        ]
+    else:
+        torrent_file = work_dir / sanitize_filename(filename_from_url(source_url, "source.torrent"), "source.torrent")
+        download_file(source_url, torrent_file)
+        cmd = ["aria2c", "--show-files=true", "--summary-interval=0", str(torrent_file)]
+    result = run_cmd(cmd, cwd=work_dir, timeout=180, check=False)
+    if result.returncode not in (0, 7):
+        warnings.append("Torrent metadata inspection returned a non-zero exit code; parsed output may be incomplete.")
+    items = parse_aria2_show_files(result.stdout)
+    if not items:
+        warnings.append("Could not parse torrent file list from aria2c output. Magnet metadata may not have become available in time.")
+    return items, warnings
+
+
+def inspect_url_list(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    text = source_url if "\n" in source_url else read_url_text(source_url)
+    urls = extract_urls_from_text(text, source_url if source_url.startswith("http") else "")
+    items: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for url in urls:
+        head = http_head(url)
+        name = head.get("filename") or filename_from_url(url, f"url_item_{len(items) + 1}.bin")
+        size = int(head.get("size_bytes") or 0)
+        item = item_from_path(len(items) + 1, name, size, kind="url_item", source_url=url)
+        item["content_type"] = head.get("content_type", "")
+        items.append(item)
+    if not items:
+        warnings.append("No URLs were found in the supplied list.")
+    return items, warnings
+
+
+def inspect_directory_listing(source_url: str) -> tuple[list[dict[str, Any]], list[str]]:
+    text = read_url_text(source_url)
+    urls = extract_urls_from_text(text, source_url)
+    items: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for url in urls:
+        parsed_path = os.path.basename(url.split("?", 1)[0].rstrip("/"))
+        if not parsed_path or url.endswith("/"):
+            continue
+        head = http_head(url)
+        name = head.get("filename") or filename_from_url(url, f"listing_item_{len(items) + 1}.bin")
+        size = int(head.get("size_bytes") or 0)
+        item = item_from_path(len(items) + 1, name, size, kind="directory_item", source_url=url)
+        item["content_type"] = head.get("content_type", "")
+        items.append(item)
+    if not items:
+        warnings.append("Directory listing parsing is best-effort and no downloadable file links were found.")
+    return items, warnings
+
+
+def inspect_direct_file(source_url: str, head: dict[str, Any]) -> list[dict[str, Any]]:
+    name = head.get("filename") or filename_from_url(source_url, "direct_file.bin")
+    size = int(head.get("size_bytes") or 0)
+    item = item_from_path(1, name, size, kind="direct_file", source_url=source_url)
+    item["content_type"] = head.get("content_type", "") or mimetype_from_name(name)
+    return [item]
+
+
+def mimetype_from_name(name: str) -> str:
+    import mimetypes
+
+    return mimetypes.guess_type(name)[0] or "application/octet-stream"
+
+
+def inspect_archive(source_url: str, kind: str, work_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    warnings: list[str] = []
+    archive_name = filename_from_url(source_url, f"source.{kind}")
+    archive_path = work_dir / sanitize_filename(archive_name, f"source.{kind}")
+    download_file(source_url, archive_path)
+    if kind == "zip":
+        items = list_zip(archive_path)
+    else:
+        try:
+            items = list_with_7z(archive_path)
+        except Exception as exc_7z:
+            try:
+                items = list_with_bsdtar(archive_path)
+                warnings.append(f"7z listing failed, but bsdtar listed this {kind.upper()} archive.")
+            except Exception as exc_bsdtar:
+                items = []
+                warnings.append(f"Could not list this {kind.upper()} archive with 7z or bsdtar: {exc_7z}; {exc_bsdtar}")
+    return items, warnings
+
+
+def build_report(manifest: dict[str, Any]) -> str:
+    source = manifest.get("source", {})
+    items = manifest.get("items") or []
+    warnings = manifest.get("warnings") or []
+    warning_text = ""
+    if warnings:
+        warning_text = "\n\n⚠️ <b>Notes:</b>\n" + "\n".join(f"- {html_escape(w)}" for w in warnings[:5])
+    return (
+        "📦 <b>Package Inspector</b>\n\n"
+        "🔗 <b>Source:</b>\n"
+        f"<code>{html_escape(source.get('safe_log_url') or safe_url_for_log(source.get('url', '')))}</code>\n\n"
+        f"🧭 <b>Type:</b> <code>{html_escape(source.get('kind', 'unknown'))}</code>\n"
+        f"🧩 <b>Items:</b> <code>{len(items)}</code>\n"
+        f"📏 <b>Total:</b> <code>{html_escape(manifest.get('summary', {}).get('total_size_text', 'Unknown'))}</code>\n\n"
+        "🧩 <b>Item list:</b>\n"
+        f"{compact_items_for_telegram(items)}"
+        f"{warning_text}\n\n"
+        "📄 <b>Manifest:</b> Ready for package-repack.yml."
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Inspect package-like source and create manifest.json")
+    add_common_cli(parser)
+    parser.add_argument("--manifest-out", default="manifest.json")
+    parser.add_argument("--send-telegram", default="true", choices=["true", "false"])
+    args = parser.parse_args()
+
+    if args.progress_chat_id:
+        os.environ["PROGRESS_CHAT_ID"] = args.progress_chat_id
+    if args.progress_message_id:
+        os.environ["PROGRESS_MESSAGE_ID"] = args.progress_message_id
+
+    ctx = TelegramContext.from_env()
+    work_dir = Path(args.work_dir)
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    progress_stage(ctx, "inspecting", 10, "Inspecting", "Preparing_package_inspection")
+    source_url = args.source_url.strip()
+    if not source_url:
+        raise SystemExit("Missing source_url.")
+
+    head = http_head(source_url) if source_url.startswith(("http://", "https://")) else {}
+    kind = guess_kind_from_url(source_url, head)
+    source_meta = {
+        "content_type": head.get("content_type", ""),
+        "size_bytes": int(head.get("size_bytes") or 0),
+        "size_text": format_bytes(head.get("size_bytes") or 0),
+    }
+
+    progress_stage(ctx, "listing", 25, "Listing", f"Detected_{kind}")
+    warnings: list[str] = []
+
+    if kind in {"zip", "rar", "7z"}:
+        items, warnings = inspect_archive(source_url, kind, work_dir)
+    elif kind == "torrent":
+        items, warnings = inspect_torrent(source_url, work_dir)
+    elif kind == "url_list":
+        items, warnings = inspect_url_list(source_url, work_dir)
+    elif kind == "directory_listing":
+        items, warnings = inspect_directory_listing(source_url)
+    else:
+        items = inspect_direct_file(source_url, head)
+
+    progress_stage(ctx, "manifest", 70, "Building", "Building_manifest_json")
+    manifest = build_manifest(
+        source_url,
+        kind,
+        items,
+        dispatch_key=args.dispatch_key,
+        source_meta=source_meta,
+        warnings=warnings,
+    )
+    out = Path(args.manifest_out)
+    write_json(out, manifest)
+
+    progress_stage(ctx, "uploading", 85, "Uploading", "Sending_manifest_report")
+    report = build_report(manifest)
+    if args.send_telegram == "true":
+        telegram_send_message(ctx, report)
+        telegram_send_document(ctx, out, "manifest.json", manifest_caption(manifest))
+        telegram_edit_final(
+            ctx,
+            "✅ <b>GitHub Remote</b>",
+            f"📦 <b>Package Inspector completed</b>\n🧩 <b>Items:</b> <code>{len(items)}</code>\n📄 <b>Manifest:</b> <code>manifest.json</code>\n",
+        )
+    print(json.dumps(manifest, ensure_ascii=False, indent=2))
+    progress_stage(ctx, "completed", 100, "Completed", "Package_inspection_completed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
