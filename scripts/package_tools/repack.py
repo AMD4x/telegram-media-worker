@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Repack selected package items into a Telegram-ready ZIP."""
 
 from __future__ import annotations
@@ -8,6 +7,11 @@ import json
 import os
 import shutil
 import zipfile
+import base64
+import binascii
+import gzip
+import re
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -161,6 +165,24 @@ def stage_torrent(source_url: str, selected: list[dict[str, Any]], stage_dir: Pa
     source_lower = source_url.lower().strip()
     torrent_source = source_url
 
+    def extract_btih(value: str) -> str | None:
+        match = re.search(r"urn:btih:([A-Za-z0-9]+)", value, re.I)
+        if not match:
+            return None
+
+        raw = match.group(1).strip()
+
+        if re.fullmatch(r"[A-Fa-f0-9]{40}", raw):
+            return raw.upper()
+
+        if re.fullmatch(r"[A-Za-z2-7]{32}", raw):
+            try:
+                return base64.b32decode(raw.upper()).hex().upper()
+            except (binascii.Error, ValueError):
+                return None
+
+        return None
+
     def find_latest_torrent_file(*roots: Path) -> Path | None:
         candidates: list[Path] = []
 
@@ -183,49 +205,101 @@ def stage_torrent(source_url: str, selected: list[dict[str, Any]], stage_dir: Pa
             reverse=True,
         )[0]
 
-    if source_lower.startswith("magnet:?"):
-        metadata_dir = work_dir / "torrent_metadata"
-        metadata_dir.mkdir(parents=True, exist_ok=True)
-
-        runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp")
-        dht_file = runner_temp / "aria2-dht-package-repack.dat"
-
-        metadata_cmd = [
-            "timeout",
-            "240s",
-            "aria2c",
-            f"--dir={metadata_dir}",
-            "--bt-metadata-only=true",
-            "--bt-save-metadata=true",
-            "--seed-time=0",
-            "--seed-ratio=0.0",
-            "--max-overall-upload-limit=1K",
-            "--disable-ipv6=true",
-            "--enable-dht=true",
-            "--enable-dht6=false",
-            f"--dht-file-path={dht_file}",
-            "--bt-stop-timeout=180",
-            "--summary-interval=0",
-            "--console-log-level=warn",
-            source_url,
+    def fetch_cached_torrent(info_hash: str) -> Path | None:
+        urls = [
+            f"https://itorrents.org/torrent/{info_hash}.torrent",
+            f"http://itorrents.net/torrent/{info_hash}.torrent",
+            f"https://torrage.info/torrent.php?h={info_hash}",
+            f"https://btcache.me/torrent/{info_hash}",
         ]
 
-        metadata_result = run_cmd(
-            metadata_cmd,
-            cwd=work_dir,
-            timeout=300,
-            check=False,
-        )
+        for pos, cache_url in enumerate(urls, start=1):
+            target = work_dir / f"cached-repack-{pos}-{info_hash}.torrent"
 
-        torrent_file = find_latest_torrent_file(metadata_dir, work_dir, runner_temp, Path.cwd())
+            try:
+                req = urllib.request.Request(
+                    cache_url,
+                    headers={
+                        "User-Agent": "AMD4x-Package-Repacker/1.0",
+                        "Accept": "application/x-bittorrent,*/*",
+                        "Accept-Encoding": "gzip",
+                    },
+                )
 
-        if not torrent_file:
-            raise RuntimeError(
-                "Could not fetch torrent metadata for selected repack. "
-                f"aria2c exit code: {metadata_result.returncode}"
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = resp.read()
+                    encoding = str(resp.headers.get("Content-Encoding") or "").lower()
+
+                if encoding == "gzip" or data.startswith(b"\x1f\x8b"):
+                    try:
+                        data = gzip.decompress(data)
+                    except Exception:
+                        pass
+
+                if not data.startswith(b"d") or b"4:info" not in data[:2000000]:
+                    continue
+
+                target.write_bytes(data)
+
+                if target.exists() and target.stat().st_size > 0:
+                    return target
+
+            except Exception:
+                continue
+
+        return None
+
+    if source_lower.startswith("magnet:?"):
+        info_hash = extract_btih(source_url)
+
+        if info_hash:
+            cached_torrent = fetch_cached_torrent(info_hash)
+            if cached_torrent:
+                torrent_source = str(cached_torrent)
+
+        if torrent_source == source_url:
+            metadata_dir = work_dir / "torrent_metadata"
+            metadata_dir.mkdir(parents=True, exist_ok=True)
+
+            runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp")
+            dht_file = runner_temp / "aria2-dht-package-repack.dat"
+
+            metadata_cmd = [
+                "timeout",
+                "240s",
+                "aria2c",
+                f"--dir={metadata_dir}",
+                "--bt-metadata-only=true",
+                "--bt-save-metadata=true",
+                "--seed-time=0",
+                "--seed-ratio=0.0",
+                "--max-overall-upload-limit=1K",
+                "--disable-ipv6=true",
+                "--enable-dht=true",
+                "--enable-dht6=false",
+                f"--dht-file-path={dht_file}",
+                "--bt-stop-timeout=180",
+                "--summary-interval=0",
+                "--console-log-level=warn",
+                source_url,
+            ]
+
+            metadata_result = run_cmd(
+                metadata_cmd,
+                cwd=work_dir,
+                timeout=300,
+                check=False,
             )
 
-        torrent_source = str(torrent_file)
+            torrent_file = find_latest_torrent_file(metadata_dir, work_dir, runner_temp, Path.cwd())
+
+            if not torrent_file:
+                raise RuntimeError(
+                    "Could not fetch torrent metadata for selected repack. "
+                    f"aria2c exit code: {metadata_result.returncode}"
+                )
+
+            torrent_source = str(torrent_file)
     else:
         torrent_file = work_dir / sanitize_filename(filename_from_url(source_url, "source.torrent"), "source.torrent")
         download_file(source_url, torrent_file)
@@ -406,7 +480,6 @@ def main() -> int:
                 "📄 <b>Repack manifest</b>"
             )
 
-        # بعد وصول الملف بنجاح، لا نترك رسالة GitHub Remote 100% معلّقة.
         telegram_delete_progress(ctx)
 
     print(json.dumps(repack_manifest, ensure_ascii=False, indent=2))
