@@ -53,7 +53,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Prepare package tools
         run: |
@@ -173,10 +173,3 @@ jobs:
           print("MANIFEST_STORE_PATH=" + path)
           print("MANIFEST_STORE_SHA=" + str((result.get("content") or {}).get("sha") or ""))
           PY
-
-      - name: Upload manifest artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: package-manifest-${{ inputs.dispatch_key || 'manual' }}
-          path: manifest.json
-          if-no-files-found: error
