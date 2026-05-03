@@ -136,12 +136,14 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
             "--allow-overwrite=true",
             "--enable-dht=true",
             "--enable-peer-exchange=true",
+            "--bt-stop-timeout=240",
+            "--seed-time=0",
             "--dir",
             str(work_dir),
             source_url,
         ]
 
-        metadata_result = run_cmd(metadata_cmd, cwd=work_dir, timeout=300, check=False)
+        metadata_result = run_cmd(metadata_cmd, cwd=work_dir, timeout=360, check=False)
 
         torrent_files = sorted(
             work_dir.glob("*.torrent"),
@@ -167,7 +169,11 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
         items = parse_aria2_show_files(metadata_result.stdout)
 
         if not items:
-            warnings.append("Could not fetch torrent metadata from this magnet link in time. Try again later or use a direct .torrent file.")
+            warnings.append(
+                "Could not fetch torrent metadata from this magnet link in time. "
+                "GitHub runner may not have reached peers/trackers, or this magnet has weak availability. "
+                "Try again later or use a direct .torrent file."
+            )
 
         return items, warnings
 
