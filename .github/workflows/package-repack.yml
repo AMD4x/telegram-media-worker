@@ -87,7 +87,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Prepare package tools
         run: |
@@ -146,9 +146,3 @@ jobs:
             --manifest-out "repack-manifest.json" \
             --send-telegram "${SEND_TELEGRAM:-true}"
 
-      - name: Upload repack manifest artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: package-repack-manifest-${{ inputs.dispatch_key || 'manual' }}
-          path: repack-manifest.json
-          if-no-files-found: error
