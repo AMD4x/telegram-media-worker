@@ -393,8 +393,6 @@ def main() -> int:
     parser.add_argument("--delete-indexes", default="")
     parser.add_argument("--rename-map-json", default="")
     parser.add_argument("--output-filename", default="package_output.zip")
-    parser.add_argument("--send-manifest", default="false", choices=["true", "false"])
-    parser.add_argument("--manifest-out", default="repack-manifest.json")
     parser.add_argument("--split-part-mib", default=str(DEFAULT_SPLIT_PART_MIB))
     parser.add_argument("--send-telegram", default="true", choices=["true", "false"])
     args = parser.parse_args()
