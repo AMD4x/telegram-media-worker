@@ -9,6 +9,10 @@ import os
 import re
 import sys
 import zipfile
+import base64
+import binascii
+import gzip
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -127,6 +131,25 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
 
     source_lower = source_url.lower().strip()
 
+    def extract_btih(value: str) -> str | None:
+        match = re.search(r"urn:btih:([A-Za-z0-9]+)", value, re.I)
+        if not match:
+            return None
+
+        raw = match.group(1).strip()
+
+        if re.fullmatch(r"[A-Fa-f0-9]{40}", raw):
+            return raw.upper()
+
+        # دعم btih base32 عند الحاجة.
+        if re.fullmatch(r"[A-Za-z2-7]{32}", raw):
+            try:
+                return base64.b32decode(raw.upper()).hex().upper()
+            except (binascii.Error, ValueError):
+                return None
+
+        return None
+
     def find_latest_torrent_file(*roots: Path) -> Path | None:
         candidates: list[Path] = []
 
@@ -162,7 +185,69 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
         )
         return parse_aria2_show_files(show_result.stdout or "")
 
+    def fetch_cached_torrent(info_hash: str) -> Path | None:
+        """
+        محاولة جلب ملف .torrent من cache عام باستخدام info-hash.
+        هذا للفحص فقط، ولا يحمّل المحتوى.
+        """
+        urls = [
+            f"https://itorrents.org/torrent/{info_hash}.torrent",
+            f"http://itorrents.net/torrent/{info_hash}.torrent",
+            f"https://torrage.info/torrent.php?h={info_hash}",
+            f"https://btcache.me/torrent/{info_hash}",
+        ]
+
+        for pos, cache_url in enumerate(urls, start=1):
+            target = work_dir / f"cached-{pos}-{info_hash}.torrent"
+
+            try:
+                req = urllib.request.Request(
+                    cache_url,
+                    headers={
+                        "User-Agent": "AMD4x-Package-Inspector/1.0",
+                        "Accept": "application/x-bittorrent,*/*",
+                        "Accept-Encoding": "gzip",
+                    },
+                )
+
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = resp.read()
+                    encoding = str(resp.headers.get("Content-Encoding") or "").lower()
+
+                if encoding == "gzip" or data.startswith(b"\x1f\x8b"):
+                    try:
+                        data = gzip.decompress(data)
+                    except Exception:
+                        pass
+
+                # ملف .torrent هو bencode، وغالبًا يبدأ بـ d ويحتوي info.
+                if not data.startswith(b"d") or b"4:info" not in data[:2000000]:
+                    continue
+
+                target.write_bytes(data)
+
+                if target.exists() and target.stat().st_size > 0:
+                    return target
+
+            except Exception:
+                continue
+
+        return None
+
     if source_lower.startswith("magnet:?"):
+        info_hash = extract_btih(source_url)
+
+        # 1) جرّب cache أولًا لأنّه أكثر ثباتًا من DHT على GitHub runners.
+        if info_hash:
+            cached_torrent = fetch_cached_torrent(info_hash)
+            if cached_torrent:
+                items = list_torrent_file(cached_torrent)
+                if items:
+                    return items, warnings
+
+                warnings.append("Torrent cache returned metadata, but aria2c -S did not return a parsable file list.")
+
+        # 2) fallback: نفس فكرة workflow التورنت القديم تقريبًا عبر aria2/DHT.
         runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp")
         dht_file = runner_temp / "aria2-dht-package-inspect.dat"
         fetch_log = work_dir / "magnet-metadata-fetch.log"
@@ -195,7 +280,11 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
         )
 
         try:
-            fetch_log.write_text(metadata_result.stdout or "", encoding="utf-8", errors="replace")
+            fetch_log.write_text(
+                (metadata_result.stdout or "") + "\n" + (metadata_result.stderr or ""),
+                encoding="utf-8",
+                errors="replace",
+            )
         except Exception:
             pass
 
@@ -207,13 +296,13 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
                 warnings.append("Torrent metadata was fetched, but aria2c -S did not return a parsable file list.")
             return items, warnings
 
-        items = parse_aria2_show_files(metadata_result.stdout or "")
+        items = parse_aria2_show_files((metadata_result.stdout or "") + "\n" + (metadata_result.stderr or ""))
 
         if not items:
             warnings.append(
-                "Could not fetch torrent metadata from this magnet link in time. "
-                "Package Inspector used the same metadata strategy as the torrent workflow, "
-                "but no .torrent metadata file was produced."
+                "Could not fetch torrent metadata from this magnet link. "
+                "Tried torrent metadata cache first, then aria2 DHT/tracker metadata fetch, "
+                "but no parsable .torrent metadata was available."
             )
 
         return items, warnings
@@ -225,28 +314,6 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
 
     if not items:
         warnings.append("Could not parse torrent file list from aria2c -S output.")
-
-    return items, warnings
-
-    torrent_file = work_dir / sanitize_filename(filename_from_url(source_url, "source.torrent"), "source.torrent")
-    download_file(source_url, torrent_file)
-
-    cmd = [
-        "aria2c",
-        "--show-files=true",
-        "--summary-interval=0",
-        str(torrent_file),
-    ]
-
-    result = run_cmd(cmd, cwd=work_dir, timeout=120, check=False)
-
-    if result.returncode not in (0, 7):
-        warnings.append("Torrent metadata inspection returned a non-zero exit code; parsed output may be incomplete.")
-
-    items = parse_aria2_show_files(result.stdout)
-
-    if not items:
-        warnings.append("Could not parse torrent file list from aria2c output.")
 
     return items, warnings
 
