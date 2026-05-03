@@ -1,0 +1,15 @@
+{
+  "ref": "main",
+  "inputs": {
+    "source_url": "https://example.com/archive.zip",
+    "keep_indexes": "1,2,5-7",
+    "delete_indexes": "",
+    "rename_map_json": "{\"folder/old.pdf\":\"folder/new.pdf\"}",
+    "output_filename": "package_output.zip",
+    "split_part_mib": "1900",
+    "progress_chat_id": "123456789",
+    "progress_message_id": "64",
+    "dispatch_key": "123456789-64-repack",
+    "send_telegram": "true"
+  }
+}
