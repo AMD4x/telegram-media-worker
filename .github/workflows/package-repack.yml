@@ -25,14 +25,6 @@ on:
         required: false
         default: "package_output.zip"
         type: string
-      send_manifest:
-        description: "Send repack-manifest.json to Telegram"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
       split_part_mib:
         description: "Part size in MiB for ZIP files larger than Telegram single-file limit"
         required: false
@@ -112,7 +104,6 @@ jobs:
           DELETE_INDEXES: ${{ inputs.delete_indexes }}
           RENAME_MAP_JSON: ${{ inputs.rename_map_json }}
           OUTPUT_FILENAME: ${{ inputs.output_filename }}
-          SEND_MANIFEST: ${{ inputs.send_manifest }}
           SPLIT_PART_MIB: ${{ inputs.split_part_mib }}
           PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
           PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
@@ -137,12 +128,10 @@ jobs:
             --delete-indexes "${DELETE_INDEXES:-}" \
             --rename-map-json "${RENAME_MAP_JSON:-}" \
             --output-filename "${OUTPUT_FILENAME:-package_output.zip}" \
-            --send-manifest "${SEND_MANIFEST:-false}" \
             --split-part-mib "${SPLIT_PART_MIB:-1900}" \
             --dispatch-key "${DISPATCH_KEY:-manual}" \
             --progress-chat-id "${PROGRESS_CHAT_ID:-}" \
             --progress-message-id "${PROGRESS_MESSAGE_ID:-}" \
             --work-dir "work/package-repack" \
-            --manifest-out "repack-manifest.json" \
             --send-telegram "${SEND_TELEGRAM:-true}"
 
