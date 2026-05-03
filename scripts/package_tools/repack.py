@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
 import zipfile
@@ -28,16 +27,12 @@ from common import (
     http_head,
     load_rename_map,
     progress_stage,
-    read_url_text,
     run_cmd,
     sanitize_filename,
     sanitize_relative_path,
     target_path_for_item,
     telegram_delete_progress,
-    telegram_edit_final,
     telegram_send_document,
-    telegram_send_message,
-    write_json,
 )
 import importlib.util
 
@@ -447,23 +442,6 @@ def main() -> int:
     progress_stage(ctx, "repacking", 70, "Repacking", "Building_output_zip")
     file_count, output_size = make_zip(stage_dir, output_path)
 
-    repack_manifest = {
-        **manifest,
-        "repack": {
-            "created_at": manifest.get("created_at"),
-            "keep_indexes": args.keep_indexes,
-            "delete_indexes": args.delete_indexes,
-            "rename_map": rename_map,
-            "output_filename": output_name,
-            "output_size_bytes": output_size,
-            "output_size_text": format_bytes(output_size),
-            "included_item_count": len(selected),
-            "zip_file_count": file_count,
-        },
-    }
-    manifest_out = Path(args.manifest_out)
-    write_json(manifest_out, repack_manifest)
-
     progress_stage(ctx, "uploading", 85, "Uploading", "Sending_repacked_zip")
     if args.send_telegram == "true":
         caption = (
@@ -480,14 +458,6 @@ def main() -> int:
             caption,
             split_part_mib=int(args.split_part_mib or DEFAULT_SPLIT_PART_MIB)
         )
-
-        if args.send_manifest == "true":
-            telegram_send_document(
-                ctx,
-                manifest_out,
-                "repack-manifest.json",
-                "📄 <b>Repack manifest</b>"
-            )
 
         telegram_delete_progress(ctx)
 
