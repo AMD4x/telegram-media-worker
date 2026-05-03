@@ -30,6 +30,7 @@ from common import (
     sanitize_filename,
     sanitize_relative_path,
     target_path_for_item,
+    telegram_delete_progress,
     telegram_edit_final,
     telegram_send_document,
     telegram_send_message,
@@ -279,25 +280,33 @@ def main() -> int:
 
     progress_stage(ctx, "uploading", 85, "Uploading", "Sending_repacked_zip")
     if args.send_telegram == "true":
-        report = build_repack_report(manifest, selected, output_name, output_size)
-        telegram_send_message(ctx, report)
         caption = (
             "📦 <b>Package Repacker</b>\n"
             f"📄 <code>{html_escape(output_name)}</code>\n"
             f"🧩 Items: <code>{len(selected)}</code>\n"
             f"📏 Size: <code>{html_escape(format_bytes(output_size))}</code>"
         )
-        telegram_send_document(ctx, output_path, output_name, caption, split_part_mib=int(args.split_part_mib or DEFAULT_SPLIT_PART_MIB))
-        if args.send_manifest == "true":
-            telegram_send_document(ctx, manifest_out, "repack-manifest.json", "📄 <b>Repack manifest</b>")
-        telegram_edit_final(
+
+        telegram_send_document(
             ctx,
-            "✅ <b>GitHub Remote</b>",
-            f"📦 <b>Package Repacker completed</b>\n📄 <b>Output:</b> <code>{html_escape(output_name)}</code>\n🧩 <b>Items:</b> <code>{len(selected)}</code>\n📏 <b>Size:</b> <code>{html_escape(format_bytes(output_size))}</code>\n",
+            output_path,
+            output_name,
+            caption,
+            split_part_mib=int(args.split_part_mib or DEFAULT_SPLIT_PART_MIB)
         )
 
+        if args.send_manifest == "true":
+            telegram_send_document(
+                ctx,
+                manifest_out,
+                "repack-manifest.json",
+                "📄 <b>Repack manifest</b>"
+            )
+
+        # بعد وصول الملف بنجاح، لا نترك رسالة GitHub Remote 100% معلّقة.
+        telegram_delete_progress(ctx)
+
     print(json.dumps(repack_manifest, ensure_ascii=False, indent=2))
-    progress_stage(ctx, "completed", 100, "Completed", "Package_repack_completed")
     return 0
 
 
