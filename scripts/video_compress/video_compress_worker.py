@@ -323,6 +323,7 @@ class Telegram:
         settings: CompressionSettings,
         final_file_name: str,
         video_probe: ProbeInfo,
+        platform: str,
     ) -> None:
         if not self.progress_chat_id or not self.progress_message_id:
             return
@@ -332,7 +333,7 @@ class Telegram:
             dimensions = f"{video_probe.width}x{video_probe.height}"
         text = (
             "✅ <b>GitHub Video Compress completed.</b>\n\n"
-            "🌐 <b>Platform:</b> <code>generic</code>\n"
+            f"🌐 <b>Platform:</b> <code>{safe_text(platform)}</code>\n"
             "🧭 <b>Path:</b> <code>video-compress</code>\n"
             f"🎚️ <b>Compression:</b> <code>{settings.level}/100</code>\n"
             f"🧱 <b>Settings:</b> <code>{safe_text(settings_label)}</code>\n"
@@ -812,6 +813,7 @@ def main() -> int:
             settings=settings,
             final_file_name=final_path.name,
             video_probe=video_probe,
+            platform=platform,
         )
 
         write_outputs(
