@@ -471,6 +471,19 @@ def telegram_edit_final(ctx: TelegramContext, title: str, body: str, *, status: 
         timeout=30,
     )
 
+def telegram_delete_progress(ctx: TelegramContext) -> None:
+    """حذف رسالة التقدّم بعد نجاح الإرسال لتقليل ضوضاء Telegram."""
+    if not (ctx.token and ctx.progress_chat_id and ctx.progress_message_id):
+        return
+
+    curl_form(
+        f"https://api.telegram.org/bot{ctx.token}/deleteMessage",
+        {
+            "chat_id": ctx.progress_chat_id,
+            "message_id": ctx.progress_message_id,
+        },
+        timeout=20,
+    )
 
 def start_local_bot_api(ctx: TelegramContext) -> str:
     if not shutil.which("telegram-bot-api"):
