@@ -66,7 +66,7 @@ jobs:
           aria2c --version | head -n 1 || true
           7z | head -n 2 || true
 
-      - name: Inspect and send manifest
+      - name: Inspect package source
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
