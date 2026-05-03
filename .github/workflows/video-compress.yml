@@ -1,0 +1,122 @@
+name: Video Compress To Telegram
+run-name: "AMD4x Video Compress ${{ inputs.dispatch_key }} · ${{ inputs.compression_level }} · ${{ inputs.send_as }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      media_url:
+        description: "Media URL"
+        required: true
+        type: string
+      compression_level:
+        description: "Compression level: 1 best quality / light compression, 100 strongest compression / smallest size"
+        required: true
+        default: "50"
+        type: string
+      send_as:
+        description: "Send compressed output as"
+        required: true
+        default: "video"
+        type: choice
+        options:
+          - "video"
+          - "document"
+          - "zip"
+      output_filename:
+        description: "Optional output filename. .mp4 or .zip is normalized automatically."
+        required: false
+        type: string
+      chat_id:
+        description: "Optional Telegram destination chat id. Falls back to TELEGRAM_CHAT_ID then ADMIN_ID."
+        required: false
+        type: string
+      progress_chat_id:
+        description: "Telegram progress chat id. Falls back to chat_id/TELEGRAM_CHAT_ID/ADMIN_ID."
+        required: false
+        type: string
+      progress_message_id:
+        description: "Telegram progress message id to edit. If empty, the workflow creates one when possible."
+        required: false
+        type: string
+      reply_to_message_id:
+        description: "Optional Telegram message id to reply to when sending the final output."
+        required: false
+        type: string
+      dispatch_key:
+        description: "Dispatch key"
+        required: false
+        default: "manual"
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  video_compress_send:
+    name: Compress video and send to Telegram
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    container:
+      image: ghcr.io/ad4x/tg-video-worker:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    outputs:
+      final_file_name: ${{ steps.video_compress.outputs.final_file_name }}
+      final_size_bytes: ${{ steps.video_compress.outputs.final_size_bytes }}
+      send_as: ${{ steps.video_compress.outputs.send_as }}
+      send_method: ${{ steps.video_compress.outputs.send_method }}
+      telegram_message_id: ${{ steps.video_compress.outputs.telegram_message_id }}
+      compression_level: ${{ steps.video_compress.outputs.compression_level }}
+      crf: ${{ steps.video_compress.outputs.crf }}
+      preset: ${{ steps.video_compress.outputs.preset }}
+      audio_bitrate: ${{ steps.video_compress.outputs.audio_bitrate }}
+      max_height: ${{ steps.video_compress.outputs.max_height }}
+      dispatch_key: ${{ steps.video_compress.outputs.dispatch_key }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Load video compress script
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p scripts/video_compress
+
+          curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/scripts/video_compress/video_compress_worker.py?ref=${GITHUB_SHA}" \
+            -o scripts/video_compress/video_compress_worker.py
+
+          python3 -m py_compile scripts/video_compress/video_compress_worker.py
+
+      - name: Compress and send to Telegram
+        id: video_compress
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
+          FACEBOOK_COOKIES_TXT: ${{ secrets.FACEBOOK_COOKIES_TXT }}
+          MEDIA_URL_INPUT: ${{ inputs.media_url }}
+          COMPRESSION_LEVEL_INPUT: ${{ inputs.compression_level }}
+          SEND_AS_INPUT: ${{ inputs.send_as }}
+          OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
+          CHAT_ID_INPUT: ${{ inputs.chat_id }}
+          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
+          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
+          REPLY_TO_MESSAGE_ID: ${{ inputs.reply_to_message_id }}
+          DISPATCH_KEY: ${{ inputs.dispatch_key }}
+        run: |
+          set -euo pipefail
+          python3 scripts/video_compress/video_compress_worker.py
