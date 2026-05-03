@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "feature": "package-inspector-repacker",
+  "manifest_id": "pkg-pkginspect-24813-1777801227424036992-1777801256",
+  "created_at": "2026-05-03T09:40:56Z",
+  "dispatch_key": "pkginspect-24813-1777801227424036992",
+  "source": {
+    "url": "https://www.youtube.com/shorts/2W4rz4wqD8w?feature=share",
+    "kind": "directory_listing",
+    "safe_log_url": "https://www.youtube.com/shorts/2W4rz4wqD8w",
+    "content_type": "text/html",
+    "size_bytes": 0,
+    "size_text": "0 B"
+  },
+  "summary": {
+    "item_count": 9,
+    "total_size_bytes": 1096235,
+    "total_size_text": "1.05 MB"
+  },
+  "items": [
+    {
+      "index": 1,
+      "path": "error_204",
+      "name": "error_204",
+      "size_bytes": 0,
+      "size_text": "0 B",
+      "kind": "directory_item",
+      "source_url": "https://www.youtube.com/error_204?t=jserror&level=ERROR",
+      "selected_by_default": true,
+      "content_type": "text/html"
+    },
+    {
+      "index": 2,
+      "path": "favicon.ico",
+      "name": "favicon.ico",
+      "size_bytes": 13942,
+      "size_text": "13.62 KB",
+      "kind": "directory_item",
+      "source_url": "https://www.youtube.com/s/desktop/1904e31a/img/favicon.ico",
+      "selected_by_default": true,
+      "content_type": "image/x-icon"
+    },
+    {
+      "index": 3,
+      "path": "generate_204",
+      "name": "generate_204",
+      "size_bytes": 0,
+      "size_text": "0 B",
+      "kind": "directory_item",
+      "source_url": "https://i.ytimg.com/generate_204",
+      "selected_by_default": true,
+      "content_type": ""
+    },
+    {
+      "index": 4,
+      "path": "emojis-png-15.1.json",
+      "name": "emojis-png-15.1.json",
+      "size_bytes": 996633,
+      "size_text": "973.27 KB",
+      "kind": "directory_item",
+      "source_url": "https://www.gstatic.com/youtube/img/emojis/emojis-png-15.1.json",
+      "selected_by_default": true,
+      "content_type": "application/json"
+    },
+    {
+      "index": 5,
+      "path": "scheduler.js",
+      "name": "scheduler.js",
+      "size_bytes": 8768,
+      "size_text": "8.56 KB",
+      "kind": "directory_item",
+      "source_url": "https://www.youtube.com/s/desktop/1904e31a/jsbin/scheduler.vflset/scheduler.js",
+      "selected_by_default": true,
+      "content_type": "text/javascript"
+    },
+    {
+      "index": 6,
+      "path": "network.js",
+      "name": "network.js",
+      "size_bytes": 14141,
+      "size_text": "13.81 KB",
+      "kind": "directory_item",
+      "source_url": "https://www.youtube.com/s/desktop/1904e31a/jsbin/network.vflset/network.js",
+      "selected_by_default": true,
+      "content_type": "text/javascript"
+    },
+    {
+      "index": 7,
+      "path": "spf.js",
+      "name": "spf.js",
+      "size_bytes": 38138,
+      "size_text": "37.24 KB",
+      "kind": "directory_item",
+      "source_url": "https://www.youtube.com/s/desktop/1904e31a/jsbin/spf.vflset/spf.js",
+      "selected_by_default": true,
+      "content_type": "text/javascript"
+    },
+    {
+      "index": 8,
+      "path": "frame0.jpg",
+      "name": "frame0.jpg",
+      "size_bytes": 16074,
+      "size_text": "15.70 KB",
+      "kind": "directory_item",
+      "source_url": "https://i.ytimg.com/vi/2W4rz4wqD8w/frame0.jpg",
+      "selected_by_default": true,
+      "content_type": "image/jpeg"
+    },
+    {
+      "index": 9,
+      "path": "www-main-desktop-watch-page-skeleton.css",
+      "name": "www-main-desktop-watch-page-skeleton.css",
+      "size_bytes": 8539,
+      "size_text": "8.34 KB",
+      "kind": "directory_item",
+      "source_url": "https://www.youtube.com/s/desktop/1904e31a/cssbin/www-main-desktop-watch-page-skeleton.css",
+      "selected_by_default": true,
+      "content_type": "text/css"
+    }
+  ],
+  "warnings": [],
+  "bot_binding": {
+    "index_base": 1,
+    "display_key": "path",
+    "keep_indexes_format": "1,2,4-6",
+    "delete_indexes_format": "2,3",
+    "rename_map_key": "path",
+    "repack_workflow": "package-repack.yml",
+    "required_repack_inputs": [
+      "source_url",
+      "keep_indexes",
+      "delete_indexes",
+      "rename_map_json",
+      "output_filename",
+      "dispatch_key"
+    ]
+  }
+}
