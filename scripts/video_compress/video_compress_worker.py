@@ -493,7 +493,9 @@ class Telegram:
                 "-F",
                 f"chat_id={self.chat_id}",
                 "-F",
-                f"document=@{path}",
+                "disable_content_type_detection=true",
+                "-F",
+                f"document=@{path};filename={path.name};type=application/octet-stream",
             ]
 
         if reply_to_message_id:
