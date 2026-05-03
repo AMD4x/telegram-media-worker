@@ -127,55 +127,106 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
 
     source_lower = source_url.lower().strip()
 
+    def find_latest_torrent_file(*roots: Path) -> Path | None:
+        candidates: list[Path] = []
+
+        for root in roots:
+            try:
+                if root and root.exists():
+                    candidates.extend(
+                        path for path in root.rglob("*.torrent")
+                        if path.is_file() and path.stat().st_size > 0
+                    )
+            except Exception:
+                continue
+
+        if not candidates:
+            return None
+
+        return sorted(
+            candidates,
+            key=lambda path: path.stat().st_mtime if path.exists() else 0,
+            reverse=True,
+        )[0]
+
+    def list_torrent_file(torrent_file: Path) -> list[dict[str, Any]]:
+        show_result = run_cmd(
+            [
+                "aria2c",
+                "-S",
+                str(torrent_file),
+            ],
+            cwd=work_dir,
+            timeout=120,
+            check=False,
+        )
+        return parse_aria2_show_files(show_result.stdout or "")
+
     if source_lower.startswith("magnet:?"):
+        runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp")
+        dht_file = runner_temp / "aria2-dht-package-inspect.dat"
+        fetch_log = work_dir / "magnet-metadata-fetch.log"
+
         metadata_cmd = [
+            "timeout",
+            "240s",
             "aria2c",
+            f"--dir={work_dir}",
             "--bt-metadata-only=true",
             "--bt-save-metadata=true",
-            "--summary-interval=0",
-            "--allow-overwrite=true",
-            "--enable-dht=true",
-            "--enable-peer-exchange=true",
-            "--bt-stop-timeout=240",
             "--seed-time=0",
-            "--dir",
-            str(work_dir),
+            "--seed-ratio=0.0",
+            "--max-overall-upload-limit=1K",
+            "--disable-ipv6=true",
+            "--enable-dht=true",
+            "--enable-dht6=false",
+            f"--dht-file-path={dht_file}",
+            "--bt-stop-timeout=180",
+            "--summary-interval=0",
+            "--console-log-level=warn",
             source_url,
         ]
 
-        metadata_result = run_cmd(metadata_cmd, cwd=work_dir, timeout=360, check=False)
-
-        torrent_files = sorted(
-            work_dir.glob("*.torrent"),
-            key=lambda path: path.stat().st_mtime if path.exists() else 0,
-            reverse=True,
+        metadata_result = run_cmd(
+            metadata_cmd,
+            cwd=work_dir,
+            timeout=300,
+            check=False,
         )
 
-        if torrent_files:
-            show_cmd = [
-                "aria2c",
-                "--show-files=true",
-                "--summary-interval=0",
-                str(torrent_files[0]),
-            ]
-            show_result = run_cmd(show_cmd, cwd=work_dir, timeout=120, check=False)
-            items = parse_aria2_show_files(show_result.stdout)
+        try:
+            fetch_log.write_text(metadata_result.stdout or "", encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
+        torrent_file = find_latest_torrent_file(work_dir, runner_temp, Path.cwd())
+
+        if torrent_file:
+            items = list_torrent_file(torrent_file)
             if not items:
-                warnings.append("Torrent metadata was saved, but aria2c did not print a parsable file list.")
-
+                warnings.append("Torrent metadata was fetched, but aria2c -S did not return a parsable file list.")
             return items, warnings
 
-        items = parse_aria2_show_files(metadata_result.stdout)
+        items = parse_aria2_show_files(metadata_result.stdout or "")
 
         if not items:
             warnings.append(
                 "Could not fetch torrent metadata from this magnet link in time. "
-                "GitHub runner may not have reached peers/trackers, or this magnet has weak availability. "
-                "Try again later or use a direct .torrent file."
+                "Package Inspector used the same metadata strategy as the torrent workflow, "
+                "but no .torrent metadata file was produced."
             )
 
         return items, warnings
+
+    torrent_file = work_dir / sanitize_filename(filename_from_url(source_url, "source.torrent"), "source.torrent")
+    download_file(source_url, torrent_file)
+
+    items = list_torrent_file(torrent_file)
+
+    if not items:
+        warnings.append("Could not parse torrent file list from aria2c -S output.")
+
+    return items, warnings
 
     torrent_file = work_dir / sanitize_filename(filename_from_url(source_url, "source.torrent"), "source.torrent")
     download_file(source_url, torrent_file)
