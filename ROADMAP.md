@@ -2,7 +2,7 @@
 
 ## Current state
 
-The project is functionally complete. All six workflow families are working.
+The project is functionally complete. All eight workflow families are working, including Package Inspector and Package Repacker.
 The Docker image rebuilds automatically when yt-dlp or Deno release updates.
 
 ## Known limitations
@@ -27,6 +27,10 @@ The Docker image rebuilds automatically when yt-dlp or Deno release updates.
 
 - All workflows are trigger-only via workflow_dispatch. There is no
   workflow_call interface for composability.
+
+- Package Inspector / Repacker remains the main package-management flow; Package Browser rename ordering is maintained by the Telegram bot UI and does not change workflow inputs.
+  The repository workflows receive only the final selected indexes and
+  rename_map_json payload.
 
 ## Possible future additions
 
