@@ -28,10 +28,14 @@ The format loosely follows "Keep a Changelog" style, with simple sections for Ad
 ### Added
 
 - Added AMD4x Merge as an optional Windows Explorer helper for joining downloaded split parts.
+- Added `video-compress.yml` for remote video compression with `video`, `document`, and `zip` Telegram output modes.
+- Added `scripts/video_compress/video_compress_worker.py` as an isolated worker for compression, naming, progress updates, and Telegram delivery.
+- Added `docs/video-compress.md` with manual and bot-side usage examples.
 - Added AMD4x Merge documentation under `tools/windows/amd4x-merge/`.
 - Documented AMD4x Merge in the main README, bot usage guide, workflow reference, supported-platforms guide, and troubleshooting guide.
 
 ### Notes
 
+- `video-compress.yml` uses `compression_level` as compression strength, not quality.
 - AMD4x Merge is a user-side Windows restore helper only.
 - No GitHub Actions workflow behavior, Telegram upload behavior, secrets, runtime logic, or workflow inputs were changed.
