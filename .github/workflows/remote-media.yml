@@ -2772,6 +2772,17 @@ jobs:
 
               if [ "$TRY_RC" -eq 90 ]; then
                 echo "DNS failure in generic auto highest."
+              elif [ "$TRY_RC" -ne 0 ]; then
+                echo "GENERIC_FORCE_EXTRACTOR_FALLBACK=1"
+
+                set +e
+                try_download "generic-force-fallback" "highest" "$FORMAT_SELECTOR" --force-generic-extractor
+                TRY_RC=$?
+                set -e
+
+                if [ "$TRY_RC" -eq 90 ]; then
+                  echo "DNS failure in generic force extractor fallback."
+                fi
               fi
             else
               NEXT_HIGHER_HEIGHT="$(next_higher_height)"
@@ -2794,6 +2805,17 @@ jobs:
 
               if [ "$TRY_RC" -eq 90 ]; then
                 echo "DNS failure in generic ordered single pass."
+              elif [ "$TRY_RC" -ne 0 ]; then
+                echo "GENERIC_FORCE_EXTRACTOR_FALLBACK=1"
+
+                set +e
+                try_download "generic-force-fallback" "$MAX_HEIGHT_NUM" "$FORMAT_SELECTOR" --force-generic-extractor
+                TRY_RC=$?
+                set -e
+
+                if [ "$TRY_RC" -eq 90 ]; then
+                  echo "DNS failure in generic force extractor fallback."
+                fi
               fi
             fi
           fi
