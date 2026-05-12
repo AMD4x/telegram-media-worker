@@ -1388,6 +1388,123 @@ jobs:
             return 0
           }
 
+          prepare_media_without_reencode_if_safe() {
+            set +e
+
+            local input_file="$1"
+            local output_file="$2"
+
+            if [ ! -f "$input_file" ]; then
+              return 1
+            fi
+
+            local input_size
+            input_size="$(stat -c%s "$input_file" 2>/dev/null || echo 0)"
+
+            if [ "$input_size" -le 0 ]; then
+              return 1
+            fi
+
+            local input_format
+            local input_vcodec
+            local input_acodec
+            local input_pix_fmt
+
+            input_format="$(ffprobe -v error -show_entries format=format_name -of default=noprint_wrappers=1:nokey=1 "$input_file" 2>/dev/null | head -n 1 || true)"
+            input_vcodec="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$input_file" 2>/dev/null | head -n 1 || true)"
+            input_acodec="$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$input_file" 2>/dev/null | head -n 1 || true)"
+            input_pix_fmt="$(ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$input_file" 2>/dev/null | head -n 1 || true)"
+
+            INPUT_VIDEO_CODEC_FINAL="${input_vcodec:-unknown}"
+            INPUT_AUDIO_CODEC_FINAL="${input_acodec:-none}"
+
+            echo "FAST_REPACK_CHECK=1"
+            echo "INPUT_CONTAINER=masked"
+            echo "INPUT_VIDEO_CODEC=masked"
+            echo "INPUT_AUDIO_CODEC=masked"
+            echo "INPUT_PIXEL_FORMAT=masked"
+
+            if ! echo "${input_format:-}" | grep -Eq '(^|,)mp4(,|$)'; then
+              echo "FAST_REPACK_SKIP=container_not_mp4"
+              return 1
+            fi
+
+            if [ "${input_vcodec:-}" != "h264" ]; then
+              echo "FAST_REPACK_SKIP=video_codec_not_h264"
+              return 1
+            fi
+
+            if [ -n "${input_acodec:-}" ] && [ "$input_acodec" != "aac" ]; then
+              echo "FAST_REPACK_SKIP=audio_codec_not_aac"
+              return 1
+            fi
+
+            if [ "${input_pix_fmt:-}" != "yuv420p" ]; then
+              echo "FAST_REPACK_SKIP=pixel_format_not_yuv420p"
+              return 1
+            fi
+
+            progress_stage "fast_repack" "60" "Processing" "Fast_repack_no_reencode"
+
+            local tmp_output
+            tmp_output="${output_file}.tmp.mp4"
+
+            rm -f "$output_file" "$tmp_output"
+
+            ffmpeg -hide_banner -loglevel error -y \
+              -i "$input_file" \
+              -map 0:v:0 -map 0:a:0? \
+              -c copy \
+              -movflags +faststart \
+              "$tmp_output"
+
+            local rc
+            rc=$?
+
+            if [ "$rc" -ne 0 ]; then
+              echo "FAST_REPACK_FAILED=1"
+              echo "FAST_REPACK_RC=${rc}"
+              rm -f "$tmp_output"
+              return 1
+            fi
+
+            if [ ! -f "$tmp_output" ]; then
+              echo "FAST_REPACK_OUTPUT_MISSING=1"
+              return 1
+            fi
+
+            local output_size
+            output_size="$(stat -c%s "$tmp_output" 2>/dev/null || echo 0)"
+
+            if [ "$output_size" -le 0 ]; then
+              echo "FAST_REPACK_OUTPUT_EMPTY=1"
+              rm -f "$tmp_output"
+              return 1
+            fi
+
+            mv "$tmp_output" "$output_file"
+
+            local output_vcodec
+            local output_acodec
+
+            output_vcodec="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$output_file" 2>/dev/null | head -n 1 || true)"
+            output_acodec="$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$output_file" 2>/dev/null | head -n 1 || true)"
+
+            echo "FAST_REPACK_SUCCESS=1"
+            echo "OUTPUT_VIDEO_CODEC=masked"
+            echo "OUTPUT_AUDIO_CODEC=masked"
+            echo "::add-mask::${output_size}"
+            echo "OUTPUT_SIZE_BYTES=masked"
+
+            OUTPUT_VIDEO_CODEC_FINAL="${output_vcodec:-unknown}"
+            OUTPUT_AUDIO_CODEC_FINAL="${output_acodec:-none}"
+            OUTPUT_SIZE_BYTES_FINAL="${output_size}"
+
+            progress_stage "fast_repacked" "68" "Processed" "Media_repacked_no_reencode"
+
+            return 0
+          }
+
           media_has_audio_stream() {
             local file_path="$1"
 
@@ -2269,22 +2386,24 @@ jobs:
               exit 1
             fi
 
-            progress_stage "normalizing" "60" "Processing" "Normalizing_media"
+            if prepare_media_without_reencode_if_safe "$file_path" "$final_file"; then
+              echo "MEDIA_PREPARE_MODE=fast_repack_no_reencode"
+            else
+              normalize_media_for_sharing "$file_path" "$final_file"
+              local normalize_rc=$?
 
-            normalize_media_for_sharing "$file_path" "$final_file"
-            local normalize_rc=$?
+              if [ "$normalize_rc" -ne 0 ]; then
+                echo "Media normalize failed after successful download. Trying a lower or alternate format."
+                return 1
+              fi
 
-            if [ "$normalize_rc" -ne 0 ]; then
-              echo "Media normalize failed after successful download. Trying a lower or alternate format."
-              return 1
+              echo "MEDIA_PREPARE_MODE=normalize_reencode"
             fi
 
             rm -f "$file_path"
             file_path="$final_file"
 
-            echo "NORMALIZED_FILE=masked"
-
-            progress_stage "normalized" "68" "Processed" "Media_normalized"
+            echo "PREPARED_FILE=masked"
 
             ensure_media_fits_telegram_limit "$file_path"
             local fit_rc=$?
