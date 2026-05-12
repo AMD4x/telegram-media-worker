@@ -2455,9 +2455,10 @@ jobs:
               --no-playlist \
               --no-warnings \
               --geo-bypass \
-              --socket-timeout 10 \
-              --retries 0 \
-              --fragment-retries 0 \
+              --socket-timeout 20 \
+              --retries 2 \
+              --fragment-retries 10 \
+              --retry-sleep fragment:linear=1:5 \
               --concurrent-fragments "$CONCURRENT_FRAGMENTS" \
               --merge-output-format mp4 \
               --remux-video mp4 \
