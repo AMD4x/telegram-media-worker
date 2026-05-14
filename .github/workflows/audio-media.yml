@@ -1,0 +1,117 @@
+name: Audio Media To Telegram
+run-name: "AMD4x Audio ${{ inputs.dispatch_key }} · ${{ inputs.audio_format }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: "Audio or video URL"
+        required: false
+        type: string
+      search_query:
+        description: "Optional manual audio search query"
+        required: false
+        type: string
+      audio_format:
+        description: "Final audio format"
+        required: true
+        default: "mp3"
+        type: choice
+        options:
+          - "mp3"
+          - "m4a"
+          - "raw"
+          - "voice"
+      output_filename:
+        description: "Optional final filename"
+        required: false
+        type: string
+      chat_id:
+        description: "Optional Telegram destination chat id. Falls back to TELEGRAM_CHAT_ID then ADMIN_ID."
+        required: false
+        type: string
+      progress_chat_id:
+        description: "Telegram progress chat id. Falls back to chat_id/TELEGRAM_CHAT_ID/ADMIN_ID."
+        required: false
+        type: string
+      progress_message_id:
+        description: "Telegram progress message id to edit. If empty, the workflow creates one when possible."
+        required: false
+        type: string
+      reply_to_message_id:
+        description: "Optional Telegram message id to reply to when sending the final output."
+        required: false
+        type: string
+      dispatch_key:
+        description: "Dispatch key"
+        required: false
+        default: "manual"
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  audio_media_send:
+    name: Extract audio and send to Telegram
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    container:
+      image: ghcr.io/amd4x/tg-video-worker:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    outputs:
+      ok: ${{ steps.audio.outputs.ok }}
+      platform: ${{ steps.audio.outputs.platform }}
+      source_mode: ${{ steps.audio.outputs.source_mode }}
+      audio_format: ${{ steps.audio.outputs.audio_format }}
+      send_mode: ${{ steps.audio.outputs.send_mode }}
+      telegram_message_id: ${{ steps.audio.outputs.telegram_message_id }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Load audio media script
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p scripts/audio_media
+
+          curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/scripts/audio_media/audio_media_worker.py?ref=${GITHUB_SHA}" \
+            -o scripts/audio_media/audio_media_worker.py
+
+          python3 -m py_compile scripts/audio_media/audio_media_worker.py
+
+      - name: Extract audio and send to Telegram
+        id: audio
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
+          FACEBOOK_COOKIES_TXT: ${{ secrets.FACEBOOK_COOKIES_TXT }}
+          SOURCE_URL_INPUT: ${{ inputs.source_url }}
+          SEARCH_QUERY_INPUT: ${{ inputs.search_query }}
+          AUDIO_FORMAT_INPUT: ${{ inputs.audio_format }}
+          OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
+          CHAT_ID_INPUT: ${{ inputs.chat_id }}
+          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
+          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
+          REPLY_TO_MESSAGE_ID: ${{ inputs.reply_to_message_id }}
+          DISPATCH_KEY: ${{ inputs.dispatch_key }}
+        run: |
+          set -euo pipefail
+          python3 scripts/audio_media/audio_media_worker.py
