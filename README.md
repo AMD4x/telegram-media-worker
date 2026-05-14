@@ -1,6 +1,6 @@
 # Telegram Media Worker
 
-GitHub Actions powered remote media worker for Telegram bots — download, convert, trim, inspect, repack, and send media/packages using yt-dlp, FFmpeg, and Telegram Local Bot API.
+GitHub Actions powered remote media worker for Telegram bots — download media, convert video to audio, compress video, inspect/repack packages, and send results using yt-dlp, FFmpeg, and Telegram Local Bot API.
 
 This repository runs temporary media jobs on GitHub-hosted runners, prepares the final media when needed, and sends the result to Telegram. It is designed for Telegram bots that need remote downloading, media conversion, document delivery, progress updates, or large-file upload behavior without keeping a permanent server online.
 
