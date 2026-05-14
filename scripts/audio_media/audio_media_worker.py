@@ -892,11 +892,8 @@ def main() -> int:
         write_outputs(
             {
                 "ok": "true",
-                "platform": final_plan.platform,
-                "source_mode": final_plan.source_mode,
                 "audio_format": audio_format,
                 "send_mode": "voice" if audio_format == "voice" else "audio",
-                "telegram_message_id": message_id,
             }
         )
         safe_log("completed")
@@ -907,11 +904,8 @@ def main() -> int:
         write_outputs(
             {
                 "ok": "false",
-                "platform": final_plan.platform,
-                "source_mode": final_plan.source_mode,
                 "audio_format": audio_format,
                 "send_mode": "voice" if audio_format == "voice" else "audio",
-                "telegram_message_id": message_id,
             }
         )
         safe_log("failed")
