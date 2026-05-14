@@ -576,6 +576,19 @@ def metadata_query_from_info(info: dict) -> str:
     return query[:MAX_SEARCH_QUERY_CHARS]
 
 
+def media_name_from_info(info: dict) -> str:
+    artist = str(info.get("artist") or info.get("creator") or info.get("uploader") or "").strip()
+    title = str(info.get("track") or info.get("title") or info.get("fulltitle") or "").strip()
+
+    if artist and title and artist.lower() not in title.lower():
+        value = f"{artist} - {title}"
+    else:
+        value = title or artist
+
+    value = re.sub(r"\s+", " ", value).strip()
+    return value[:120]
+
+
 def extract_metadata_query(source_url: str, cookies_args: list[str]) -> str:
     args = [
         *ytdlp_base_args(cookies_args),
@@ -593,6 +606,27 @@ def extract_metadata_query(source_url: str, cookies_args: list[str]) -> str:
     query = metadata_query_from_info(info)
     mask(query)
     return query
+
+
+def extract_source_name(source_url: str, cookies_args: list[str]) -> str:
+    args = [
+        *ytdlp_base_args(cookies_args),
+        "--skip-download",
+        "--dump-single-json",
+        source_url,
+    ]
+    result = subprocess_run(args, check=False, timeout=180)
+    if result.returncode != 0:
+        return ""
+
+    try:
+        info = json.loads(result.stdout or "{}")
+    except Exception:
+        return ""
+
+    name = media_name_from_info(info)
+    mask(name)
+    return name
 
 
 def is_search_source(value: str) -> bool:
@@ -857,7 +891,9 @@ def main() -> int:
 
         telegram.update_progress(68, "Converting", "Preparing final audio output")
         ext = extension_for_format(audio_format, source_file)
-        fallback_name = f"{default_output_base(final_plan.platform)}{ext}"
+        source_name = extract_source_name(final_plan.source, prepare_cookies("youtube") if final_plan.source_mode == "metadata-search" else cookies_args)
+        fallback_base = source_name or default_output_base(final_plan.platform)
+        fallback_name = f"{fallback_base}{ext}"
         final_name = clean_filename(output_filename, fallback_name, ext if audio_format != "raw" else None)
         final_file = WORK_DIR / final_name
         mask_many([final_name, final_file])
