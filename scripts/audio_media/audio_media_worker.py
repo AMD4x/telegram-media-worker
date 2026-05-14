@@ -893,10 +893,6 @@ def select_youtube_search_source(query: str, cookies_args: list[str]) -> str:
     return ""
 
 
-def is_search_source(value: str) -> bool:
-    return value.startswith("ytsearch") or value.startswith("ytsearchdate")
-
-
 def newest_file(paths: Iterable[Path]) -> Path | None:
     existing = [p for p in paths if p.is_file()]
     if not existing:
@@ -1094,7 +1090,6 @@ def main() -> int:
     search_query = env("SEARCH_QUERY_INPUT")
     audio_format = env("AUDIO_FORMAT_INPUT", "mp3").lower()
     output_filename = env("OUTPUT_FILENAME_INPUT")
-    dispatch_key = env("DISPATCH_KEY", "manual")
     reply_to_message_id = env("REPLY_TO_MESSAGE_ID")
 
     if audio_format not in {"mp3", "m4a", "raw", "voice"}:
