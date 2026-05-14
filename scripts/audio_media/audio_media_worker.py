@@ -657,6 +657,48 @@ def metadata_query_from_spotify_oembed(source_url: str) -> str:
     return ""
 
 
+def metadata_query_from_spotify_title(source_url: str) -> str:
+    platform, _referer = detect_platform(source_url)
+    if platform != "spotify":
+        return ""
+
+    result = subprocess_run(
+        [
+            "curl",
+            "-sS",
+            "-L",
+            "--connect-timeout",
+            "10",
+            "--max-time",
+            "20",
+            "--user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "-H",
+            "Accept-Language: en-US,en;q=0.9",
+            source_url,
+        ],
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return ""
+
+    page = result.stdout or ""
+    match = re.search(r"<title[^>]*>(.*?)</title>", page, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return ""
+
+    title = html.unescape(match.group(1))
+    title = title.replace(" | Spotify", "")
+    title = re.sub(r"\s*[-–]\s*song and lyrics by\s*", " ", title, flags=re.IGNORECASE)
+    title = re.sub(r"\s*[-–]\s*song by\s*", " ", title, flags=re.IGNORECASE)
+    title = re.sub(r"\s*[-–]\s*Single by\s*", " ", title, flags=re.IGNORECASE)
+    title = re.sub(r"\s*[-–]\s*EP by\s*", " ", title, flags=re.IGNORECASE)
+    title = re.sub(r"\s+", " ", title).strip()
+
+    return title[:MAX_SEARCH_QUERY_CHARS]
+
+
 def metadata_query_from_webpage_title(source_url: str) -> str:
     result = subprocess_run(
         [
@@ -715,6 +757,18 @@ def media_name_from_info(info: dict) -> str:
 
 
 def extract_metadata_query(source_url: str, cookies_args: list[str]) -> str:
+    platform, _referer = detect_platform(source_url)
+
+    if platform == "spotify":
+        for fallback in (
+            metadata_query_from_spotify_title,
+            metadata_query_from_spotify_oembed,
+            metadata_query_from_webpage_title,
+        ):
+            query = fallback(source_url)
+            if query:
+                return query
+
     args = [
         *ytdlp_base_args(cookies_args),
         "--skip-download",
@@ -733,16 +787,11 @@ def extract_metadata_query(source_url: str, cookies_args: list[str]) -> str:
         if query:
             return query
 
-    platform, _referer = detect_platform(source_url)
-    if platform == "spotify":
-        fallbacks = (metadata_query_from_webpage_title, metadata_query_from_spotify_oembed)
-    else:
-        fallbacks = (metadata_query_from_spotify_oembed, metadata_query_from_webpage_title)
-
-    for fallback in fallbacks:
-        query = fallback(source_url)
-        if query:
-            return query
+    if platform != "spotify":
+        for fallback in (metadata_query_from_spotify_oembed, metadata_query_from_webpage_title):
+            query = fallback(source_url)
+            if query:
+                return query
 
     return ""
 
