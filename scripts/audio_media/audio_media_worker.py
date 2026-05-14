@@ -733,6 +733,166 @@ def extract_source_name(source_url: str, cookies_args: list[str]) -> str:
     return name
 
 
+def normalize_match_text(value: str) -> str:
+    value = html.unescape(str(value or "")).lower()
+    value = re.sub(r"[\u064b-\u065f\u0670\u0640]", "", value)
+    value = value.translate(
+        str.maketrans(
+            {
+                "\u0623": "\u0627",
+                "\u0625": "\u0627",
+                "\u0622": "\u0627",
+                "\u0671": "\u0627",
+                "\u0649": "\u064a",
+                "\u0626": "\u064a",
+                "\u0624": "\u0648",
+                "\u0629": "\u0647",
+            }
+        )
+    )
+    value = re.sub(r"[^0-9a-z\u0600-\u06ff]+", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+def match_tokens(value: str) -> set[str]:
+    tokens = set(normalize_match_text(value).split())
+    return {token for token in tokens if len(token) > 1}
+
+
+def youtube_search_base_args(cookies_args: list[str]) -> list[str]:
+    return [arg for arg in ytdlp_base_args(cookies_args) if arg != "--no-playlist"]
+
+
+def youtube_entry_url(entry: dict) -> str:
+    webpage_url = str(entry.get("webpage_url") or entry.get("original_url") or "").strip()
+    if webpage_url:
+        return webpage_url
+
+    video_id = str(entry.get("id") or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9_-]{6,}", video_id):
+        return f"https://www.youtube.com/watch?v={video_id}"
+
+    return ""
+
+
+def youtube_search_entries(query: str, cookies_args: list[str], limit: int = 8) -> list[dict]:
+    clean_query = normalize_metadata_query(query)
+    if not clean_query:
+        return []
+
+    result = subprocess_run(
+        [
+            *youtube_search_base_args(cookies_args),
+            "--skip-download",
+            "--dump-single-json",
+            f"ytsearch{limit}:{clean_query}",
+        ],
+        check=False,
+        timeout=180,
+    )
+    if result.returncode != 0:
+        return []
+
+    try:
+        data = json.loads(result.stdout or "{}")
+    except Exception:
+        return []
+
+    entries = data.get("entries")
+    if isinstance(entries, list):
+        return [entry for entry in entries if isinstance(entry, dict)]
+
+    return [data] if isinstance(data, dict) else []
+
+
+def youtube_entry_score(query: str, entry: dict) -> int:
+    title = str(entry.get("title") or "").strip()
+    uploader = str(entry.get("uploader") or entry.get("channel") or entry.get("artist") or "").strip()
+
+    query_norm = normalize_match_text(query)
+    title_norm = normalize_match_text(title)
+    uploader_norm = normalize_match_text(uploader)
+
+    query_tokens = match_tokens(query)
+    title_tokens = match_tokens(title)
+    uploader_tokens = match_tokens(uploader)
+    combined_tokens = title_tokens | uploader_tokens
+
+    if not query_tokens or not title_tokens:
+        return 0
+
+    score = 0
+    score += len(query_tokens & combined_tokens) * 12
+    score += len(query_tokens & title_tokens) * 8
+    score += len(query_tokens & uploader_tokens) * 4
+
+    if query_norm and query_norm in title_norm:
+        score += 70
+    elif title_norm and title_norm in query_norm:
+        score += 35
+
+    if uploader_norm and uploader_norm in query_norm:
+        score += 20
+
+    negative_words = {
+        "cover",
+        "remix",
+        "karaoke",
+        "instrumental",
+        "slowed",
+        "sped",
+        "nightcore",
+        "reaction",
+        "tutorial",
+        "live",
+        "lyrics",
+        "\u0631\u064a\u0645\u0643\u0633",
+        "\u0643\u0627\u0631\u064a\u0648\u0643\u064a",
+        "\u0645\u0633\u0631\u0639",
+        "\u0628\u0637\u064a\u0621",
+        "\u0643\u0648\u0641\u0631",
+    }
+
+    title_words = match_tokens(title)
+    if title_words & negative_words:
+        score -= 25
+
+    return score
+
+
+def select_youtube_search_source(query: str, cookies_args: list[str]) -> str:
+    clean_query = normalize_metadata_query(query)
+    if not clean_query:
+        return ""
+
+    mask(clean_query)
+
+    entries = youtube_search_entries(clean_query, cookies_args, limit=8)
+    scored: list[tuple[int, str]] = []
+
+    for entry in entries:
+        url = youtube_entry_url(entry)
+        if not url:
+            continue
+
+        score = youtube_entry_score(clean_query, entry)
+        if score > 0:
+            scored.append((score, url))
+
+    if not scored:
+        return ""
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    best_score, best_url = scored[0]
+
+    if best_score < 24:
+        return ""
+
+    mask(best_url)
+    return best_url
+
+
 def is_search_source(value: str) -> bool:
     return value.startswith("ytsearch") or value.startswith("ytsearchdate")
 
@@ -895,15 +1055,22 @@ def resolve_with_fallback(plan: SourcePlan, cookies_args: list[str], telegram: T
     if not query:
         raise RuntimeError("Direct audio extraction failed and metadata fallback was unavailable.")
 
+    fallback_cookies = prepare_cookies("youtube")
+
+    telegram.update_progress(48, "Searching", "Selecting best fallback audio match")
+    fallback_source = select_youtube_search_source(query, fallback_cookies)
+    if not fallback_source:
+        raise RuntimeError("No confident fallback audio match was found.")
+
     fallback_plan = SourcePlan(
-        source=f"ytsearch1:{query}",
+        source=fallback_source,
         source_mode="metadata-search",
         platform=f"{plan.platform}-via-youtube",
         referer="https://www.youtube.com/",
         metadata_query=query,
     )
-    fallback_cookies = prepare_cookies("youtube")
-    telegram.update_progress(48, "Searching", "Searching fallback audio source")
+    mask_many([fallback_plan.source, fallback_plan.source_mode, fallback_plan.platform, fallback_plan.metadata_query])
+
     return download_best_audio(fallback_plan.source, fallback_cookies, "source_audio_fallback"), fallback_plan
 
 
