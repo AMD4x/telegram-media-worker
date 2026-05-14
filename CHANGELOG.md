@@ -5,6 +5,25 @@ All notable changes to this repository can be documented in this file.
 The format loosely follows "Keep a Changelog" style, with simple sections for Added, Changed, Fixed, and Security.
 
 
+## [v1.5.0] — 2026-05-14
+
+### Added
+
+- Added `audio-media.yml` as a standalone audio extraction and conversion workflow.
+- Added `scripts/audio_media/audio_media_worker.py` for downloading audio, converting video URLs to audio, resolving metadata fallback sources, and sending audio or voice output to Telegram.
+- Added `docs/audio-media-worker.md` with public usage notes for the audio worker.
+- Added `examples/audio-media.json` as a workflow dispatch example.
+
+### Changed
+
+- Updated the README, workflow reference, supported-platforms guide, bot usage guide, architecture notes, secrets documentation, troubleshooting guide, and scripts guide for the new audio workflow.
+- Updated repository positioning to include audio extraction and video-to-audio conversion alongside download, conversion, inspection, repacking, and Telegram delivery.
+
+### Notes
+
+- Spotify-style links do not expose direct audio streams. The audio worker uses source metadata to resolve an equivalent public audio source when possible.
+- The workflow supports `mp3`, `m4a`, `raw`, and Telegram `voice` output modes.
+
 ## [v1.4.0] — 2026-05-03
 
 ### Added
