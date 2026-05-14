@@ -16,6 +16,7 @@ The repository does not need a permanent media-processing server. GitHub Actions
 | `ghcr.io/amd4x/tg-video-worker:latest` | Container image used by workflows. It must contain the runtime tools. |
 | `yt-dlp` | Extracts and downloads media from supported platforms. |
 | `ffmpeg` | Converts, remuxes, normalizes, compresses, or prepares media. |
+| Audio Media Worker | Standalone audio extraction and conversion path for audio links, video-to-audio jobs, and music metadata fallback. |
 | `ffprobe` | Reads codecs, dimensions, duration, streams, and metadata. |
 | `curl` | Calls Telegram APIs, downloads direct files, probes headers, and talks to third-party APIs. |
 | Python snippets | Used for filename sanitization, ZIP creation, bitrate calculations, response parsing, and HTML escaping. |
@@ -37,6 +38,7 @@ The repository does not need a permanent media-processing server. GitHub Actions
    - safe transcode,
    - size fitting,
    - document wrapping,
+   - audio extraction/conversion,
    - or ZIP splitting.
 8. The workflow chooses the Telegram upload API.
 9. The workflow sends the final result to Telegram.
@@ -128,7 +130,7 @@ The workflow waits for the local server to respond before upload. If it does not
 | `DOCUMENT_SPLIT_PART_BYTES` | `1,850,000,000` | Target size for split ZIP parts. |
 | `TELEGRAM_TARGET_MAX_BYTES` | `1,950,000,000` | Target size used by the generic workflow when compressing video to fit below the Local Bot API limit. |
 | `YTDLP_MAX_FILESIZE` | `2000M` | Download cap used for non-document `yt-dlp` video downloads in the generic workflow. |
-| `PUBLIC_BOT_API_MAX_BYTES` | `50,000,000` | Public Bot API threshold used by `video-compress.yml` before Local Bot API is selected. |
+| `PUBLIC_BOT_API_MAX_BYTES` | `50,000,000` | Public Bot API threshold used by `video-compress.yml` and `audio-media.yml` before Local Bot API is selected. |
 
 ## Video preparation architecture
 
@@ -200,6 +202,15 @@ It tries to avoid unnecessary re-encoding, but if a candidate is not compatible 
 
 It is isolated in `scripts/video_compress/video_compress_worker.py` and does not call existing workflow scripts.
 
+
+### Audio Media Worker
+
+`audio-media.yml` is a standalone audio path. It runs `scripts/audio_media/audio_media_worker.py`, downloads the best available audio stream, converts the result to `mp3`, `m4a`, `raw`, or Telegram `voice`, then sends the final file to Telegram.
+
+The same workflow can convert supported video URLs into audio-only output. For platforms that do not expose direct downloadable audio, such as Spotify, it can build a metadata-based query and resolve an equivalent public audio source before delivery.
+
+Small audio files use Public Bot API. Larger audio files can use Local Bot API when the required Telegram API credentials are configured.
+
 ## Document architecture
 
 `remote-media.yml` supports document mode through `document_mode`. `video-compress.yml` also supports `send_as=document`, but it does not use `document_mode`; it sends the compressed MP4 as a Telegram document.
@@ -260,5 +271,7 @@ The configured image should provide:
 - `curl`,
 - `telegram-bot-api`,
 - `deno` where the workflow checks it.
+
+The audio worker also expects `yt-dlp`, `ffmpeg`, `ffprobe`, and `curl`; Local Bot API is needed only for larger audio uploads.
 
 If any required tool is missing, the affected workflow exits with an explicit error.
