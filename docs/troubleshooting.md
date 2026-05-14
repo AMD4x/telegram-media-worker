@@ -212,6 +212,68 @@ This is expected. Dedicated workflows send video only.
 
 Use `remote-media.yml` for document output.
 
+
+## `Missing source_url or search_query input`
+
+`audio-media.yml` needs either a source URL or a manual search query.
+
+Check:
+
+- `source_url` is present for URL-based audio extraction,
+- `search_query` is present for manual audio search,
+- the bot is dispatching `audio-media.yml`, not a video workflow with different input names.
+
+## `Direct audio extraction failed and metadata fallback was unavailable`
+
+The audio worker could not extract audio directly and could not build a usable fallback query from the source page.
+
+Common causes:
+
+- unsupported platform metadata,
+- private or restricted source page,
+- source page changed its HTML or metadata format,
+- URL redirects to a page without useful title information.
+
+Try a direct media URL, a YouTube/SoundCloud URL, or a manual `search_query`.
+
+## `No confident fallback audio match was found`
+
+The worker found metadata, but could not resolve a usable fallback audio source.
+
+This can happen with Spotify-style links or short/ambiguous track names. Try:
+
+- re-running with a more specific manual `search_query`,
+- including artist and featured artist names,
+- using a direct YouTube or SoundCloud URL when available.
+
+## Wrong audio was sent from a music link
+
+Metadata fallback depends on the source title and search result ordering. If the wrong track is returned, use a more specific `search_query` or a direct source URL.
+
+For Spotify links, include the artist and featured artist when using manual search.
+
+## `Telegram upload failed` in `audio-media.yml`
+
+Check:
+
+- bot permissions,
+- destination chat ID,
+- final file size,
+- whether Local Bot API credentials are available for larger audio files,
+- whether the selected `audio_format` is valid.
+
+The audio worker uses a safe temporary upload filename to avoid multipart upload issues with Unicode or special characters.
+
+## Audio output is larger than expected
+
+Some sources already use efficient codecs. Converting them to MP3 or M4A can produce a file larger than the original.
+
+Try:
+
+- `raw` to keep the downloaded audio format when possible,
+- `m4a` for AAC output,
+- a shorter or lower-quality source.
+
 ## `PACKAGE_MANIFEST_KEY_MISSING=1`
 
 `package-inspect.yml` could not encrypt the package manifest because `PACKAGE_MANIFEST_KEY` is missing.
