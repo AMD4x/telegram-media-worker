@@ -97,7 +97,7 @@ jobs:
               }
             }
 
-      - name: Load audio media script
+      - name: Load and verify audio media script
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
