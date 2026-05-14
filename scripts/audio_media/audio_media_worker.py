@@ -162,6 +162,22 @@ def curl_json(args: list[str], *, timeout: int | None = None) -> dict:
     return data
 
 
+@dataclass
+class ProbeInfo:
+    duration: str = ""
+    title: str = ""
+    artist: str = ""
+
+
+@dataclass
+class SourcePlan:
+    source: str
+    source_mode: str
+    platform: str
+    referer: str
+    metadata_query: str = ""
+
+
 def probe_duration(path: Path) -> str:
     result = subprocess_run(
         [
