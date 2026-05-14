@@ -481,7 +481,7 @@ def detect_platform(value: str) -> tuple[str, str]:
 
     if "youtube.com" in host or "youtu.be" in host or "music.youtube.com" in host:
         return "youtube", "https://www.youtube.com/"
-    if "spotify.com" in host:
+    if "spotify.com" in host or "spotify.link" in host or "spoti.fi" in host:
         return "spotify", "https://open.spotify.com/"
     if "anghami.com" in host:
         return "anghami", "https://www.anghami.com/"
@@ -580,6 +580,9 @@ def normalize_metadata_query(value: str) -> str:
     value = re.sub(r"<[^>]+>", " ", value)
     value = re.sub(r"^Listen to\s+", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\s*[-–]\s*song and lyrics by\s*", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*[-–]\s*song by\s*", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*[-–]\s*Single by\s*", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*[-–]\s*EP by\s*", " ", value, flags=re.IGNORECASE)
     value = re.sub(r"\s*\|\s*Spotify\s*$", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\s+on\s+Spotify\s*$", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\s+", " ", value).strip()
@@ -734,33 +737,6 @@ def extract_source_name(source_url: str, cookies_args: list[str]) -> str:
     return media_name_from_info(info)
 
 
-def normalize_match_text(value: str) -> str:
-    value = html.unescape(str(value or "")).lower()
-    value = re.sub(r"[\u064b-\u065f\u0670\u0640]", "", value)
-    value = value.translate(
-        str.maketrans(
-            {
-                "\u0623": "\u0627",
-                "\u0625": "\u0627",
-                "\u0622": "\u0627",
-                "\u0671": "\u0627",
-                "\u0649": "\u064a",
-                "\u0626": "\u064a",
-                "\u0624": "\u0648",
-                "\u0629": "\u0647",
-            }
-        )
-    )
-    value = re.sub(r"[^0-9a-z\u0600-\u06ff]+", " ", value)
-    value = re.sub(r"\s+", " ", value).strip()
-    return value
-
-
-def match_tokens(value: str) -> set[str]:
-    tokens = set(normalize_match_text(value).split())
-    return {token for token in tokens if len(token) > 1}
-
-
 def youtube_search_base_args(cookies_args: list[str]) -> list[str]:
     return [arg for arg in ytdlp_base_args(cookies_args) if arg != "--no-playlist"]
 
@@ -777,112 +753,56 @@ def youtube_entry_url(entry: dict) -> str:
     return ""
 
 
-def youtube_search_entries(query: str, cookies_args: list[str], limit: int = 8) -> list[dict]:
-    clean_query = normalize_metadata_query(query)
-    if not clean_query:
-        return []
-
+def youtube_search_first_url(search_source: str, cookies_args: list[str]) -> str:
     result = subprocess_run(
         [
             *youtube_search_base_args(cookies_args),
             "--skip-download",
             "--dump-single-json",
-            f"ytsearch{limit}:{clean_query}",
+            search_source,
         ],
         check=False,
         timeout=180,
     )
     if result.returncode != 0:
-        return []
+        return ""
 
     try:
         data = json.loads(result.stdout or "{}")
     except Exception:
-        return []
+        return ""
 
     entries = data.get("entries")
     if isinstance(entries, list):
-        return [entry for entry in entries if isinstance(entry, dict)]
+        for entry in entries:
+            if isinstance(entry, dict):
+                url = youtube_entry_url(entry)
+                if url:
+                    return url
+        return ""
 
-    return [data] if isinstance(data, dict) else []
+    if isinstance(data, dict):
+        return youtube_entry_url(data)
 
-
-def youtube_entry_score(query: str, entry: dict) -> int:
-    title = str(entry.get("title") or "").strip()
-    uploader = str(entry.get("uploader") or entry.get("channel") or entry.get("artist") or "").strip()
-
-    query_norm = normalize_match_text(query)
-    title_norm = normalize_match_text(title)
-    uploader_norm = normalize_match_text(uploader)
-
-    query_tokens = match_tokens(query)
-    title_tokens = match_tokens(title)
-    uploader_tokens = match_tokens(uploader)
-
-    if not query_tokens or not title_tokens:
-        return 0
-
-    if len(query_tokens) < 2:
-        return 0
-
-    title_common = query_tokens & title_tokens
-    uploader_common = query_tokens & uploader_tokens
-    combined_common = title_common | uploader_common
-
-    query_coverage = len(combined_common) / max(len(query_tokens), 1)
-    title_coverage = len(title_common) / max(len(query_tokens), 1)
-
-    if query_coverage < 0.70 and query_norm not in title_norm:
-        return 0
-
-    extra_title_tokens = title_tokens - query_tokens
-    if len(extra_title_tokens) > max(5, len(query_tokens) * 2):
-        return 0
-
-    score = 0
-    score += int(query_coverage * 100)
-    score += int(title_coverage * 60)
-    score += len(uploader_common) * 15
-
-    if query_norm and query_norm in title_norm:
-        score += 80
-
-    if uploader_norm and uploader_norm in query_norm:
-        score += 25
-
-    return score
+    return ""
 
 
 def select_youtube_search_source(query: str, cookies_args: list[str]) -> str:
     clean_query = normalize_metadata_query(query)
-    if not clean_query:
+    if len(clean_query) < 3:
         return ""
 
-    if len(match_tokens(clean_query)) < 2:
-        return ""
+    search_sources = [
+        f'ytsearch1:{clean_query} "Topic"',
+        f"ytmsearch1:{clean_query} official audio",
+    ]
 
-    entries = youtube_search_entries(clean_query, cookies_args, limit=8)
-    scored: list[tuple[int, str]] = []
+    for search_source in search_sources:
+        url = youtube_search_first_url(search_source, cookies_args)
+        if url:
+            return url
 
-    for entry in entries:
-        url = youtube_entry_url(entry)
-        if not url:
-            continue
-
-        score = youtube_entry_score(clean_query, entry)
-        if score > 0:
-            scored.append((score, url))
-
-    if not scored:
-        return ""
-
-    scored.sort(key=lambda item: item[0], reverse=True)
-    best_score, best_url = scored[0]
-
-    if best_score < 120:
-        return ""
-
-    return best_url
+    return ""
 
 
 def is_search_source(value: str) -> bool:
@@ -1141,7 +1061,10 @@ def main() -> int:
 
         telegram.update_progress(68, "Converting", "Preparing final audio output")
         ext = extension_for_format(audio_format, source_file)
-        source_name = extract_source_name(final_plan.source, prepare_cookies("youtube") if final_plan.source_mode == "metadata-search" else cookies_args)
+        source_name = extract_source_name(
+            final_plan.source,
+            prepare_cookies("youtube") if final_plan.source_mode == "metadata-search" else cookies_args,
+        )
         fallback_base = source_name or default_output_base(final_plan.platform)
         fallback_name = f"{fallback_base}{ext}"
         final_name = clean_filename(output_filename, fallback_name, ext if audio_format != "raw" else None)
