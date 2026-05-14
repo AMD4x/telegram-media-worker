@@ -436,42 +436,55 @@ class Telegram:
         send_method = "Local Bot API" if use_local else "Public Bot API"
         base = self.local_base if use_local else self.public_base
 
-        if audio_format == "voice":
-            method = "sendVoice"
-            media_field = f"voice=@{path};filename={path.name};type=audio/ogg"
-        else:
-            method = "sendAudio"
-            media_field = f"audio=@{path};filename={path.name}"
+        suffix = path.suffix.lower() or (".ogg" if audio_format == "voice" else ".audio")
+        upload_path = Path(tempfile.gettempdir()) / f"telegram-audio-upload-{os.getpid()}-{int(time.time())}{suffix}"
+        display_filename = telegram_upload_filename(path.name, f"audio{suffix}")
 
-        args = [
-            "curl",
-            "-sS",
-            "--connect-timeout",
-            "20",
-            "--max-time",
-            "7200",
-            "-X",
-            "POST",
-            f"{base}/{method}",
-            "-F",
-            f"chat_id={self.chat_id}",
-            "-F",
-            media_field,
-        ]
-        if audio_format != "voice":
-            args.extend(["-F", f"title={path.stem}"])
-        if probe_info.duration:
-            args.extend(["-F", f"duration={probe_info.duration}"])
-        if reply_to_message_id:
-            args.extend(["-F", f"reply_to_message_id={reply_to_message_id}"])
+        shutil.copy2(path, upload_path)
 
-        data = curl_json(args, timeout=7300)
-        if not data.get("ok"):
-            description = str(data.get("description") or "Telegram upload failed.").strip()
-            description = re.sub(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b", "[redacted-token]", description)
-            raise RuntimeError(f"Telegram upload failed: {description[:220]}")
-        message_id = str(((data.get("result") or {}).get("message_id")) or "")
-        return send_method, message_id
+        try:
+            if audio_format == "voice":
+                method = "sendVoice"
+                media_field = f"voice=@{upload_path};filename={display_filename};type=audio/ogg"
+            else:
+                method = "sendAudio"
+                media_field = f"audio=@{upload_path};filename={display_filename}"
+
+            args = [
+                "curl",
+                "-sS",
+                "--connect-timeout",
+                "20",
+                "--max-time",
+                "7200",
+                "-X",
+                "POST",
+                f"{base}/{method}",
+                "-F",
+                f"chat_id={self.chat_id}",
+                "-F",
+                media_field,
+            ]
+            if audio_format != "voice":
+                args.extend(["-F", f"title={path.stem}"])
+            if probe_info.duration:
+                args.extend(["-F", f"duration={probe_info.duration}"])
+            if reply_to_message_id:
+                args.extend(["-F", f"reply_to_message_id={reply_to_message_id}"])
+
+            data = curl_json(args, timeout=7300)
+            if not data.get("ok"):
+                description = str(data.get("description") or "Telegram upload failed.").strip()
+                description = re.sub(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b", "[redacted-token]", description)
+                raise RuntimeError(f"Telegram upload failed: {description[:220]}")
+
+            message_id = str(((data.get("result") or {}).get("message_id")) or "")
+            return send_method, message_id
+        finally:
+            try:
+                upload_path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def detect_platform(value: str) -> tuple[str, str]:
