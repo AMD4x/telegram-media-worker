@@ -467,7 +467,9 @@ class Telegram:
 
         data = curl_json(args, timeout=7300)
         if not data.get("ok"):
-            raise RuntimeError("Telegram upload failed.")
+            description = str(data.get("description") or "Telegram upload failed.").strip()
+            description = re.sub(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b", "[redacted-token]", description)
+            raise RuntimeError(f"Telegram upload failed: {description[:220]}")
         message_id = str(((data.get("result") or {}).get("message_id")) or "")
         return send_method, message_id
 
