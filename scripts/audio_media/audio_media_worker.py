@@ -767,17 +767,27 @@ def extract_source_name(source_url: str, cookies_args: list[str]) -> str:
 
 
 def youtube_search_base_args(cookies_args: list[str]) -> list[str]:
-    return [arg for arg in ytdlp_base_args(cookies_args) if arg != "--no-playlist"]
+    args = [arg for arg in ytdlp_base_args(cookies_args) if arg != "--no-playlist"]
+    args.extend(
+        [
+            "--flat-playlist",
+            "--user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "--extractor-args",
+            "youtube:player_client=android_vr",
+        ]
+    )
+    return args
 
 
 def youtube_entry_url(entry: dict) -> str:
-    webpage_url = str(entry.get("webpage_url") or entry.get("original_url") or "").strip()
-    if webpage_url:
-        return webpage_url
-
     video_id = str(entry.get("id") or "").strip()
     if re.fullmatch(r"[A-Za-z0-9_-]{6,}", video_id):
         return f"https://www.youtube.com/watch?v={video_id}"
+
+    raw_url = str(entry.get("url") or entry.get("webpage_url") or entry.get("original_url") or "").strip()
+    if raw_url:
+        return raw_url.replace("music.youtube.com", "www.youtube.com")
 
     return ""
 
