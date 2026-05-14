@@ -10,11 +10,11 @@ It is intended to run as a standalone worker inside this repository. The workflo
 
 The worker supports:
 
-- Extracting audio from supported media URLs.
+- Extracting audio from supported media URLs, including YouTube and SoundCloud when available.
 - Converting video links to audio-only files.
 - Sending the final audio file to Telegram.
 - Using Telegram Local Bot API for large files when configured.
-- Falling back to metadata-based search for platforms that do not expose direct audio streams.
+- Falling back to metadata-based search for platforms that do not expose direct audio streams, such as Spotify.
 
 ## Files
 
@@ -250,7 +250,7 @@ bestaudio/best
 
 After that, it converts the downloaded file according to the selected `audio_format`.
 
-This path is commonly used for YouTube, SoundCloud, and other sources supported by `yt-dlp`.
+This path is commonly used for YouTube, SoundCloud, direct media links, and other sources supported by `yt-dlp`.
 
 ## Video to audio
 
