@@ -534,7 +534,6 @@ def prepare_cookies(platform: str) -> list[str]:
     cookie_path = Path(env("RUNNER_TEMP", tempfile.gettempdir())) / f"{platform}-cookies.txt"
     cookie_path.write_text(cookies_text + "\n", encoding="utf-8")
     cookie_path.chmod(0o600)
-    mask(cookie_path)
     return ["--cookies", str(cookie_path)]
 
 
@@ -623,7 +622,7 @@ def metadata_query_from_spotify_oembed(source_url: str) -> str:
     if author and author.lower() != "spotify" and author.lower() not in title.lower():
         return f"{author} {title}".strip()[:MAX_SEARCH_QUERY_CHARS]
 
-    return title
+    return ""
 
 
 def metadata_query_from_webpage_title(source_url: str) -> str:
@@ -700,13 +699,17 @@ def extract_metadata_query(source_url: str, cookies_args: list[str]) -> str:
 
         query = metadata_query_from_info(info)
         if query:
-            mask(query)
             return query
 
-    for fallback in (metadata_query_from_spotify_oembed, metadata_query_from_webpage_title):
+    platform, _referer = detect_platform(source_url)
+    if platform == "spotify":
+        fallbacks = (metadata_query_from_webpage_title, metadata_query_from_spotify_oembed)
+    else:
+        fallbacks = (metadata_query_from_spotify_oembed, metadata_query_from_webpage_title)
+
+    for fallback in fallbacks:
         query = fallback(source_url)
         if query:
-            mask(query)
             return query
 
     return ""
@@ -728,9 +731,7 @@ def extract_source_name(source_url: str, cookies_args: list[str]) -> str:
     except Exception:
         return ""
 
-    name = media_name_from_info(info)
-    mask(name)
-    return name
+    return media_name_from_info(info)
 
 
 def normalize_match_text(value: str) -> str:
@@ -817,46 +818,37 @@ def youtube_entry_score(query: str, entry: dict) -> int:
     query_tokens = match_tokens(query)
     title_tokens = match_tokens(title)
     uploader_tokens = match_tokens(uploader)
-    combined_tokens = title_tokens | uploader_tokens
 
     if not query_tokens or not title_tokens:
         return 0
 
+    if len(query_tokens) < 2:
+        return 0
+
+    title_common = query_tokens & title_tokens
+    uploader_common = query_tokens & uploader_tokens
+    combined_common = title_common | uploader_common
+
+    query_coverage = len(combined_common) / max(len(query_tokens), 1)
+    title_coverage = len(title_common) / max(len(query_tokens), 1)
+
+    if query_coverage < 0.70 and query_norm not in title_norm:
+        return 0
+
+    extra_title_tokens = title_tokens - query_tokens
+    if len(extra_title_tokens) > max(5, len(query_tokens) * 2):
+        return 0
+
     score = 0
-    score += len(query_tokens & combined_tokens) * 12
-    score += len(query_tokens & title_tokens) * 8
-    score += len(query_tokens & uploader_tokens) * 4
+    score += int(query_coverage * 100)
+    score += int(title_coverage * 60)
+    score += len(uploader_common) * 15
 
     if query_norm and query_norm in title_norm:
-        score += 70
-    elif title_norm and title_norm in query_norm:
-        score += 35
+        score += 80
 
     if uploader_norm and uploader_norm in query_norm:
-        score += 20
-
-    negative_words = {
-        "cover",
-        "remix",
-        "karaoke",
-        "instrumental",
-        "slowed",
-        "sped",
-        "nightcore",
-        "reaction",
-        "tutorial",
-        "live",
-        "lyrics",
-        "\u0631\u064a\u0645\u0643\u0633",
-        "\u0643\u0627\u0631\u064a\u0648\u0643\u064a",
-        "\u0645\u0633\u0631\u0639",
-        "\u0628\u0637\u064a\u0621",
-        "\u0643\u0648\u0641\u0631",
-    }
-
-    title_words = match_tokens(title)
-    if title_words & negative_words:
-        score -= 25
+        score += 25
 
     return score
 
@@ -866,7 +858,8 @@ def select_youtube_search_source(query: str, cookies_args: list[str]) -> str:
     if not clean_query:
         return ""
 
-    mask(clean_query)
+    if len(match_tokens(clean_query)) < 2:
+        return ""
 
     entries = youtube_search_entries(clean_query, cookies_args, limit=8)
     scored: list[tuple[int, str]] = []
@@ -886,10 +879,9 @@ def select_youtube_search_source(query: str, cookies_args: list[str]) -> str:
     scored.sort(key=lambda item: item[0], reverse=True)
     best_score, best_url = scored[0]
 
-    if best_score < 24:
+    if best_score < 120:
         return ""
 
-    mask(best_url)
     return best_url
 
 
@@ -921,8 +913,6 @@ def download_best_audio(source: str, cookies_args: list[str], output_prefix: str
     candidate = newest_file(WORK_DIR.glob(f"{output_prefix}.*"))
     if not candidate or candidate.stat().st_size <= 0:
         raise RuntimeError("Audio extraction produced no output.")
-    mask(candidate.name)
-    mask(candidate)
     return candidate
 
 
@@ -1002,8 +992,6 @@ def convert_audio(input_file: Path, output_file: Path, audio_format: str) -> Pat
         raise RuntimeError("Audio conversion failed.")
     if not output_file.is_file() or output_file.stat().st_size <= 0:
         raise RuntimeError("Audio conversion produced no output.")
-    mask(output_file.name)
-    mask(output_file)
     return output_file
 
 
@@ -1024,7 +1012,6 @@ def extension_for_format(audio_format: str, raw_source: Path | None = None) -> s
 def build_source_plan(source_url: str, search_query: str) -> SourcePlan:
     if search_query:
         clean_query = re.sub(r"\s+", " ", search_query).strip()[:MAX_SEARCH_QUERY_CHARS]
-        mask(clean_query)
         return SourcePlan(
             source=f"ytsearch1:{clean_query}",
             source_mode="search",
@@ -1069,7 +1056,6 @@ def resolve_with_fallback(plan: SourcePlan, cookies_args: list[str], telegram: T
         referer="https://www.youtube.com/",
         metadata_query=query,
     )
-    mask_many([fallback_plan.source, fallback_plan.source_mode, fallback_plan.platform, fallback_plan.metadata_query])
 
     return download_best_audio(fallback_plan.source, fallback_cookies, "source_audio_fallback"), fallback_plan
 
@@ -1113,11 +1099,6 @@ def main() -> int:
 
     mask_many(
         [
-            source_url,
-            search_query,
-            output_filename,
-            dispatch_key,
-            reply_to_message_id,
             telegram_token,
             target_chat_id,
             progress_chat_id,
@@ -1152,13 +1133,11 @@ def main() -> int:
 
         plan = build_source_plan(source_url, search_query)
         final_plan = plan
-        mask_many([plan.source, plan.metadata_query, plan.platform, plan.source_mode])
 
         telegram.update_progress(18, "Detecting", "Detecting source platform")
         cookies_args = prepare_cookies(plan.platform)
 
         source_file, final_plan = resolve_with_fallback(plan, cookies_args, telegram)
-        mask_many([final_plan.source, final_plan.metadata_query, final_plan.platform, final_plan.source_mode])
 
         telegram.update_progress(68, "Converting", "Preparing final audio output")
         ext = extension_for_format(audio_format, source_file)
@@ -1167,7 +1146,6 @@ def main() -> int:
         fallback_name = f"{fallback_base}{ext}"
         final_name = clean_filename(output_filename, fallback_name, ext if audio_format != "raw" else None)
         final_file = WORK_DIR / final_name
-        mask_many([final_name, final_file])
 
         convert_audio(source_file, final_file, audio_format)
         final_probe = probe(final_file)
@@ -1183,7 +1161,6 @@ def main() -> int:
             probe_info=final_probe,
             reply_to_message_id=reply_to_message_id,
         )
-        mask_many([send_method, message_id])
 
         telegram.update_progress(96, "Finalizing", "Finalizing Telegram delivery")
         telegram.update_completed(
