@@ -75,7 +75,7 @@ jobs:
 
     steps:
       - name: Mask runtime inputs
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const inputs = context.payload.inputs || {};
