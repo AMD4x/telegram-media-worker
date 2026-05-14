@@ -4,29 +4,30 @@ This document describes the behavior of each workflow.
 
 ## Capability matrix
 
-| Capability | `remote-media.yml` | `youtube-video-local-api.yml` | `tiktok-direct-local-api.yml` | `facebook-long-video-local-api.yml` | `torrent-document-local-api.yml` | `package-inspect.yml` | `package-repack.yml` | `video-compress.yml` |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Manual `workflow_dispatch` | yes | yes | yes | yes | yes | yes | yes | yes |
-| Video output | yes | yes | yes | yes | no | no | no | yes |
-| Document output | yes | no | no | no | yes | optional report | ZIP document | yes |
-| ZIP output | yes | no | no | no | no | no | yes | yes |
-| `document_mode=zip` | yes | no | no | no | no | no | no | no |
-| `document_mode=original` | yes | no | no | no | no | no | no | no |
-| Split large ZIP into parts | yes | no | no | no | no | no | yes | no |
-| Split large documents into parts | yes | no | no | no | yes | no | yes | no |
-| Torrent file listing | no | no | no | no | yes | manifest only | via selected source | no |
-| Selected torrent indexes | no | no | no | no | yes | no | yes | no |
-| Package manifest generation | no | no | no | no | no | yes | no | no |
-| Package item rename map | no | no | no | no | no | no | yes | no |
-| Progress message edits | yes | yes | yes | yes | yes | yes | yes | yes |
-| Public Bot API | small files | no | no | no | small documents | optional report | small ZIPs | small files |
-| Local Bot API | when needed | yes | yes | yes | yes | no | when needed | when needed |
-| YouTube cookies | yes | yes | no | no | no | no | no | yes |
-| Facebook cookies | yes | no | no | yes | no | no | no | yes |
-| TikTok third-party resolver | no | no | yes | no | no | no | no | no |
-| Telegram/iPhone video preparation | yes | yes | codec/audio check | yes | no | no | no | yes |
-| Size-fit recompression | yes | no | no | no | no | no | no | no |
-| User-selected compression strength | no | no | no | no | no | no | no | yes |
+| Capability | `remote-media.yml` | `youtube-video-local-api.yml` | `tiktok-direct-local-api.yml` | `facebook-long-video-local-api.yml` | `torrent-document-local-api.yml` | `package-inspect.yml` | `package-repack.yml` | `video-compress.yml` | `audio-media.yml` |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Manual `workflow_dispatch` | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Video output | yes | yes | yes | yes | no | no | no | yes | no |
+| Audio output | no | no | no | no | no | no | no | no | yes |
+| Document output | yes | no | no | no | yes | optional report | ZIP document | yes | no |
+| ZIP output | yes | no | no | no | no | no | yes | yes | no |
+| `document_mode=zip` | yes | no | no | no | no | no | no | no | no |
+| `document_mode=original` | yes | no | no | no | no | no | no | no | no |
+| Split large ZIP into parts | yes | no | no | no | no | no | yes | no | no |
+| Split large documents into parts | yes | no | no | no | yes | no | yes | no | no |
+| Torrent file listing | no | no | no | no | yes | manifest only | via selected source | no | no |
+| Selected torrent indexes | no | no | no | no | yes | no | yes | no | no |
+| Package manifest generation | no | no | no | no | no | yes | no | no | no |
+| Package item rename map | no | no | no | no | no | no | yes | no | no |
+| Progress message edits | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Public Bot API | small files | no | no | no | small documents | optional report | small ZIPs | small files | small audio |
+| Local Bot API | when needed | yes | yes | yes | yes | no | when needed | when needed | when needed |
+| YouTube cookies | yes | yes | no | no | no | no | no | yes | yes |
+| Facebook cookies | yes | no | no | yes | no | no | no | yes | yes |
+| TikTok third-party resolver | no | no | yes | no | no | no | no | no | no |
+| Telegram/iPhone video preparation | yes | yes | codec/audio check | yes | no | no | no | yes | no |
+| Size-fit recompression | yes | no | no | no | no | no | no | no | no |
+| User-selected compression strength | no | no | no | no | no | no | no | yes | no |
 
 ## `remote-media.yml`
 
@@ -168,6 +169,73 @@ The generic workflow includes document-send retry handling for retryable Telegra
 - `504`.
 
 For `429`, it tries to honor `retry_after` from Telegram when present, within a bounded wait window.
+
+
+## `audio-media.yml`
+
+### Purpose
+
+Standalone audio worker for:
+
+- direct audio URLs,
+- supported media URLs,
+- video-to-audio conversion,
+- music links that need metadata fallback,
+- Telegram audio or voice delivery.
+
+### Inputs
+
+| Input | Required | Default | Accepted values / behavior |
+|---|:---:|---|---|
+| `source_url` | No | empty | Audio or video URL. Required when `search_query` is empty. |
+| `search_query` | No | empty | Manual YouTube audio search query. Used when no source URL is provided or when a caller wants an explicit search. |
+| `audio_format` | Yes | `mp3` | `mp3`, `m4a`, `raw`, or `voice`. Invalid values fall back to `mp3`. |
+| `output_filename` | No | empty | Optional final filename. The worker derives a metadata-based name when this is empty. |
+| `chat_id` | No | secret fallback | Destination chat. Falls back to `TELEGRAM_CHAT_ID`, then `ADMIN_ID`. |
+| `progress_chat_id` | No | final chat | Progress-message chat. |
+| `progress_message_id` | No | auto-create | Existing progress message to edit. |
+| `reply_to_message_id` | No | empty | Telegram message id to reply to when sending the final audio. |
+| `dispatch_key` | No | `manual` | Caller tracking key. It is not exposed in the run name. |
+
+### Output formats
+
+| Format | Telegram method | Notes |
+|:---:|:---:|---|
+| `mp3` | `sendAudio` | Converts the source to MP3. |
+| `m4a` | `sendAudio` | Converts the source to M4A/AAC. |
+| `raw` | `sendAudio` | Keeps the downloaded audio format when possible. |
+| `voice` | `sendVoice` | Converts to OGG/Opus voice output. |
+
+### Direct extraction
+
+For sources supported directly by `yt-dlp`, the worker downloads the best available audio stream using `bestaudio/best`. Video URLs are accepted when the source can be extracted; the final output is audio-only.
+
+### Metadata fallback
+
+Some music platforms do not provide a direct downloadable audio stream. When direct extraction fails, the worker can build a search query from source metadata and resolve an equivalent public audio source.
+
+For Spotify links, the worker prefers the page `<title>` metadata before other sources. This helps with Arabic titles and tracks that include featured artists.
+
+Fallback search order:
+
+```text
+ytsearch1:{query} "Topic"
+ytmsearch1:{query} official audio
+```
+
+### Upload behavior
+
+Small audio files are uploaded through Telegram Public Bot API. Larger files use Telegram Local Bot API when `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` are configured.
+
+### Outputs
+
+The workflow exposes:
+
+```text
+ok
+audio_format
+send_mode
+```
 
 
 ## `torrent-document-local-api.yml`
@@ -561,6 +629,7 @@ When `output_filename` is provided, the extension is normalized to `.mp4` for `v
 - Dedicated workflows duplicate helper logic instead of sharing common scripts.
 - The generic workflow handles more cases but is larger and more complex.
 - Platform extraction depends on upstream websites and `yt-dlp` behavior.
+- Audio metadata fallback depends on source metadata and YouTube search availability.
 - Torrent delivery is document-only and does not perform media conversion or Telegram/iPhone video compatibility preparation.
 - Package Inspector / Repacker is ZIP/document-oriented and does not perform media conversion or Telegram/iPhone video compatibility preparation.
 - Package Browser ordering for renamed items is bot-side state inside the Package Inspector / Repacker integration and is not a workflow input.
