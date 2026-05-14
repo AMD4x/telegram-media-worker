@@ -576,6 +576,100 @@ def metadata_query_from_info(info: dict) -> str:
     return query[:MAX_SEARCH_QUERY_CHARS]
 
 
+def normalize_metadata_query(value: str) -> str:
+    value = html.unescape(str(value or ""))
+    value = re.sub(r"<[^>]+>", " ", value)
+    value = re.sub(r"^Listen to\s+", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*[-–]\s*song and lyrics by\s*", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*\|\s*Spotify\s*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+on\s+Spotify\s*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value[:MAX_SEARCH_QUERY_CHARS]
+
+
+def metadata_query_from_spotify_oembed(source_url: str) -> str:
+    platform, _referer = detect_platform(source_url)
+    if platform != "spotify":
+        return ""
+
+    endpoint = "https://open.spotify.com/oembed?url=" + urllib.parse.quote(source_url, safe="")
+    result = subprocess_run(
+        [
+            "curl",
+            "-sS",
+            "-L",
+            "--connect-timeout",
+            "10",
+            "--max-time",
+            "20",
+            "--user-agent",
+            "Mozilla/5.0",
+            endpoint,
+        ],
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return ""
+
+    try:
+        data = json.loads(result.stdout or "{}")
+    except Exception:
+        return ""
+
+    title = normalize_metadata_query(str(data.get("title") or ""))
+    author = normalize_metadata_query(str(data.get("author_name") or ""))
+
+    if author and author.lower() != "spotify" and author.lower() not in title.lower():
+        return f"{author} {title}".strip()[:MAX_SEARCH_QUERY_CHARS]
+
+    return title
+
+
+def metadata_query_from_webpage_title(source_url: str) -> str:
+    result = subprocess_run(
+        [
+            "curl",
+            "-sS",
+            "-L",
+            "--connect-timeout",
+            "10",
+            "--max-time",
+            "20",
+            "--user-agent",
+            "Mozilla/5.0",
+            "-H",
+            "Accept-Language: en-US,en;q=0.9",
+            source_url,
+        ],
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return ""
+
+    page = result.stdout or ""
+    candidates: list[str] = []
+
+    patterns = [
+        r'<meta[^>]+(?:property|name)=["\'](?:og:title|twitter:title)["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\'](?:og:title|twitter:title)["\']',
+        r"<title[^>]*>(.*?)</title>",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, page, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            candidates.append(match.group(1))
+
+    for candidate in candidates:
+        query = normalize_metadata_query(candidate)
+        if query:
+            return query
+
+    return ""
+
+
 def media_name_from_info(info: dict) -> str:
     artist = str(info.get("artist") or info.get("creator") or info.get("uploader") or "").strip()
     title = str(info.get("track") or info.get("title") or info.get("fulltitle") or "").strip()
@@ -597,15 +691,25 @@ def extract_metadata_query(source_url: str, cookies_args: list[str]) -> str:
         source_url,
     ]
     result = subprocess_run(args, check=False, timeout=180)
-    if result.returncode != 0:
-        return ""
-    try:
-        info = json.loads(result.stdout or "{}")
-    except Exception:
-        return ""
-    query = metadata_query_from_info(info)
-    mask(query)
-    return query
+
+    if result.returncode == 0:
+        try:
+            info = json.loads(result.stdout or "{}")
+        except Exception:
+            info = {}
+
+        query = metadata_query_from_info(info)
+        if query:
+            mask(query)
+            return query
+
+    for fallback in (metadata_query_from_spotify_oembed, metadata_query_from_webpage_title):
+        query = fallback(source_url)
+        if query:
+            mask(query)
+            return query
+
+    return ""
 
 
 def extract_source_name(source_url: str, cookies_args: list[str]) -> str:
