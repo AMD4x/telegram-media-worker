@@ -66,11 +66,8 @@ jobs:
 
     outputs:
       ok: ${{ steps.audio.outputs.ok }}
-      platform: ${{ steps.audio.outputs.platform }}
-      source_mode: ${{ steps.audio.outputs.source_mode }}
       audio_format: ${{ steps.audio.outputs.audio_format }}
       send_mode: ${{ steps.audio.outputs.send_mode }}
-      telegram_message_id: ${{ steps.audio.outputs.telegram_message_id }}
 
     defaults:
       run:
