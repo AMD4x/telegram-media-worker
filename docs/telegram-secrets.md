@@ -46,6 +46,7 @@ Required by:
 - `facebook-long-video-local-api.yml`,
 - `remote-media.yml` when a file is too large for Public Bot API and Local Bot API is needed.
 - `video-compress.yml` when the compressed output is too large for Public Bot API and Local Bot API is needed.
+- `audio-media.yml` when the final audio is too large for Public Bot API and Local Bot API is needed.
 - `package-repack.yml` when the output ZIP or split ZIP parts require Telegram Local Bot API.
 
 The workflows start Local Bot API with:
@@ -87,7 +88,8 @@ Optional but recommended for:
 - age-gated videos,
 - region-gated videos,
 - account-sensitive videos,
-- videos that ask for sign-in.
+- videos that ask for sign-in,
+- audio fallback downloads from YouTube in `audio-media.yml`.
 
 ### `FACEBOOK_COOKIES_TXT`
 
@@ -120,7 +122,7 @@ Rotate secrets if:
 
 ## Minimal setup
 
-For small generic uploads and small `video-compress.yml` outputs:
+For small generic uploads, small `video-compress.yml` outputs, and small `audio-media.yml` outputs:
 
 ```text
 TELEGRAM_TOKEN
