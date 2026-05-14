@@ -114,6 +114,13 @@ def clean_filename(value: str, fallback: str, ext: str | None = None) -> str:
     return name or fallback
 
 
+def telegram_upload_filename(value: str, fallback: str) -> str:
+    name = clean_filename(value, fallback)
+    name = re.sub(r"[;\r\n]", " ", name)
+    name = re.sub(r"\s+", " ", name).strip().strip(".")
+    return name[:120] or fallback
+
+
 def command_exists(name: str) -> bool:
     return shutil.which(name) is not None
 
