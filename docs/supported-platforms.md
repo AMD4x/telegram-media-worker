@@ -4,21 +4,24 @@ Platform support depends on the selected workflow, source URL, available cookies
 
 ## Support matrix
 
-| Platform / URL type | Generic `remote-media.yml` | Dedicated workflow | Cookies supported by repo | Video output | Document output | Notes |
-|---|:---:|:---:|:---:|:---:|:---:|---|
-| YouTube | Yes | `youtube-video-local-api.yml` | `YOUTUBE_COOKIES_TXT` | Yes | Generic only | Generic workflow normalizes YouTube URLs. Dedicated workflow prepares Telegram/iPhone-safe video. |
-| YouTube Shorts | Yes | `youtube-video-local-api.yml` | `YOUTUBE_COOKIES_TXT` | Yes | Generic only | Generic workflow can normalize Shorts URLs to a watch URL. |
-| YouTube Music | Not explicitly detected in generic YouTube test | `youtube-video-local-api.yml` accepts it | `YOUTUBE_COOKIES_TXT` | Dedicated only | Generic may still try through generic path | Dedicated workflow validates `music.youtube.com`. |
-| TikTok | Yes | `tiktok-direct-local-api.yml` | No dedicated cookie secret | Yes | Generic only | Dedicated workflow uses `tikwm.com` first, then `yt-dlp` fallbacks. |
-| Facebook | Yes | `facebook-long-video-local-api.yml` | `FACEBOOK_COOKIES_TXT` | Yes | Generic only | Cookies are often needed for account-sensitive content. |
-| Instagram | Partial | No | No dedicated cookie secret | Generic only | Generic only | Extractability depends heavily on access restrictions and platform changes. |
-| X / Twitter | Partial | No | No dedicated cookie secret | Generic only | Generic only | Generic workflow sets X referer but has no X cookies secret. |
-| Reddit | Partial | No | No dedicated cookie secret | Generic only | Generic only | Depends on embedded media availability and `yt-dlp` support. |
-| Direct downloadable file | Yes | No | Not needed | Possible if media | Yes | Best route for document mode. |
-| Magnet / `.torrent` | No | `torrent-document-local-api.yml` | Not needed | No | Yes | Admin-oriented torrent document workflow. Supports listing, selected indexes, all files, Public Bot API for small documents, Local Bot API for large documents, and split raw binary parts. |
-| Archive / package source | No | `package-inspect.yml` + `package-repack.yml` | Not needed | No | ZIP output | Inspect archives, direct files, torrents, magnets, directory listings, or URL lists, then repack selected items. |
-| Generic media URL | Yes | No | No | Possible | Possible | Falls through to generic extraction/direct-download behavior. |
-| Compressible video URL | Through `video-compress.yml` | `video-compress.yml` | YouTube/Facebook cookies where applicable | Yes | Yes, including ZIP | Uses `yt-dlp` first, direct download fallback, then MP4/H.264/AAC compression. |
+| Platform / URL type | Generic `remote-media.yml` | Dedicated workflow | `audio-media.yml` | Cookies supported by repo | Video output | Audio output | Document output | Notes |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|---|
+| YouTube | Yes | `youtube-video-local-api.yml` | Yes | `YOUTUBE_COOKIES_TXT` | Yes | Yes | Generic only | Generic workflow normalizes YouTube URLs. Dedicated workflow prepares Telegram/iPhone-safe video. Audio workflow can extract audio or voice output. |
+| YouTube Shorts | Yes | `youtube-video-local-api.yml` | Yes | `YOUTUBE_COOKIES_TXT` | Yes | Yes | Generic only | Generic workflow can normalize Shorts URLs to a watch URL. Audio workflow can extract audio from Shorts when `yt-dlp` supports the URL. |
+| YouTube Music | Not explicitly detected in generic YouTube test | `youtube-video-local-api.yml` accepts it | Yes | `YOUTUBE_COOKIES_TXT` | Dedicated only | Yes | Generic may still try through generic path | Dedicated workflow validates `music.youtube.com`; audio workflow treats it as a YouTube-family source. |
+| TikTok | Yes | `tiktok-direct-local-api.yml` | Possible | No dedicated cookie secret | Yes | Possible | Generic only | Dedicated workflow uses `tikwm.com` first, then `yt-dlp` fallbacks. Audio extraction depends on `yt-dlp` support. |
+| Facebook | Yes | `facebook-long-video-local-api.yml` | Possible | `FACEBOOK_COOKIES_TXT` | Yes | Possible | Generic only | Cookies are often needed for account-sensitive content. Audio workflow can use Facebook cookies when extracting supported media. |
+| Instagram | Partial | No | Possible | No dedicated cookie secret | Generic only | Possible | Generic only | Extractability depends heavily on access restrictions and platform changes. |
+| X / Twitter | Partial | No | Possible | No dedicated cookie secret | Generic only | Possible | Generic only | Generic workflow sets X referer but has no X cookies secret. |
+| Reddit | Partial | No | Possible | No dedicated cookie secret | Generic only | Possible | Generic only | Depends on embedded media availability and `yt-dlp` support. |
+| Direct downloadable file | Yes | No | Possible | Not needed | Possible if media | Possible if audio/video | Yes | Best route for document mode; audio workflow can process direct media when extractable. |
+| Magnet / `.torrent` | No | `torrent-document-local-api.yml` | No | Not needed | No | No | Yes | Admin-oriented torrent document workflow. Supports listing, selected indexes, all files, Public Bot API for small documents, Local Bot API for large documents, and split raw binary parts. |
+| Archive / package source | No | `package-inspect.yml` + `package-repack.yml` | No | Not needed | No | No | ZIP output | Inspect archives, direct files, torrents, magnets, directory listings, or URL lists, then repack selected items. |
+| Generic media URL | Yes | No | Possible | No | Possible | Possible | Possible | Falls through to generic extraction/direct-download behavior. |
+| Compressible video URL | Through `video-compress.yml` | `video-compress.yml` | Yes | YouTube/Facebook cookies where applicable | Yes | Yes | Yes, including ZIP | Use `video-compress.yml` for compressed video output, or `audio-media.yml` when the requested result is audio-only. |
+| Spotify | No | No | Yes | No dedicated Spotify cookie secret | No | Metadata fallback | No | Spotify does not expose direct audio through this worker. `audio-media.yml` can resolve an equivalent public audio source from track metadata when possible. |
+| SoundCloud | Possible | No | Yes | No dedicated cookie secret | Possible | Yes | Possible | Direct extraction depends on `yt-dlp` support and source access. |
+| Bandcamp / Deezer / Apple Music / Tidal / Qobuz / Amazon Music | No dedicated path | No | Varies | No dedicated cookie secret | No | Possible | No | Support varies by platform metadata and `yt-dlp` behavior. Some sources may resolve only through metadata fallback. |
 
 ## Quality values
 
@@ -86,12 +89,37 @@ Output modes:
 
 Compression strength is controlled by `compression_level` from `1` to `100`; higher values produce stronger compression and smaller files.
 
+
+## Audio extraction workflow
+
+`audio-media.yml` is the recommended route when the requested output should be audio instead of video.
+
+It can handle:
+
+- direct audio links,
+- supported video links that should be converted to audio,
+- YouTube and YouTube Music links,
+- SoundCloud links,
+- Spotify links through metadata fallback,
+- other music platforms when metadata or `yt-dlp` support is enough to resolve a usable source.
+
+Supported output formats:
+
+| Format | Output |
+|:---:|---|
+| `mp3` | Telegram audio file. |
+| `m4a` | Telegram audio file. |
+| `raw` | Downloaded audio format when possible. |
+| `voice` | Telegram voice message using OGG/Opus. |
+
+Metadata fallback is not the same as downloading from the original music platform. It resolves an equivalent public audio result when the platform does not expose a direct stream.
+
 ## Cookies
 
 | Secret | Used by | Format | Purpose |
 |---|---|---|---|
-| `YOUTUBE_COOKIES_TXT` | `remote-media.yml`, `youtube-video-local-api.yml`, `video-compress.yml` | Netscape HTTP Cookie File | Restricted, age-gated, region-gated, or account-sensitive YouTube content. |
-| `FACEBOOK_COOKIES_TXT` | `remote-media.yml`, `facebook-long-video-local-api.yml`, `video-compress.yml` | Netscape HTTP Cookie File | Account-sensitive or restricted Facebook content. |
+| `YOUTUBE_COOKIES_TXT` | `remote-media.yml`, `youtube-video-local-api.yml`, `video-compress.yml`, `audio-media.yml` | Netscape HTTP Cookie File | Restricted, age-gated, region-gated, or account-sensitive YouTube content, including audio fallback downloads. |
+| `FACEBOOK_COOKIES_TXT` | `remote-media.yml`, `facebook-long-video-local-api.yml`, `video-compress.yml`, `audio-media.yml` | Netscape HTTP Cookie File | Account-sensitive or restricted Facebook content. |
 
 No dedicated repository secret currently exists for TikTok, Instagram, X/Twitter, or Reddit cookies.
 
@@ -176,4 +204,5 @@ When a platform fails, first check:
 1. whether the URL is publicly accessible,
 2. whether cookies are needed or expired,
 3. whether `yt-dlp` changed behavior,
-4. whether Telegram rejected the final output or file size.
+4. whether Telegram rejected the final output or file size,
+5. for audio fallback, whether the source metadata is specific enough to find the intended track.
