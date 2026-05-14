@@ -1,5 +1,5 @@
 name: Audio Media To Telegram
-run-name: "AMD4x Audio ${{ inputs.dispatch_key }} · ${{ inputs.audio_format }}"
+run-name: "AMD4x Audio · ${{ inputs.audio_format }}"
 
 on:
   workflow_dispatch:
@@ -74,6 +74,29 @@ jobs:
         shell: bash
 
     steps:
+      - name: Mask runtime inputs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const inputs = context.payload.inputs || {};
+            const keys = [
+              "source_url",
+              "search_query",
+              "output_filename",
+              "chat_id",
+              "progress_chat_id",
+              "progress_message_id",
+              "reply_to_message_id",
+              "dispatch_key",
+            ];
+
+            for (const key of keys) {
+              const value = inputs[key];
+              if (value) {
+                core.setSecret(String(value));
+              }
+            }
+
       - name: Load audio media script
         env:
           GH_TOKEN: ${{ github.token }}
