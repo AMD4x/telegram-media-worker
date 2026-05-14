@@ -30,6 +30,8 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
 | Direct file URL as Telegram document | `remote-media.yml` |
 | Unknown platform video | `remote-media.yml` |
 | Compress a video before Telegram delivery | `video-compress.yml` |
+| Extract audio from a video or media link | `audio-media.yml` |
+| Spotify, SoundCloud, or music link as audio | `audio-media.yml` |
 | Instagram/X/Reddit | `remote-media.yml` or `video-compress.yml` when compression is required |
 | Magnet link or direct `.torrent` URL | `torrent-document-local-api.yml` |
 | Inspect and repack archive/package source | `package-inspect.yml`, then `package-repack.yml` |
@@ -135,6 +137,28 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
 
 `output_filename` can be left empty. In that case, `video-compress.yml` creates a default name such as `instagram-20260503-231455.mp4` or `facebook-20260503-231455.zip`.
 
+
+
+### Audio media request
+
+```json
+{
+  "ref": "main",
+  "inputs": {
+    "source_url": "https://open.spotify.com/track/example",
+    "search_query": "",
+    "audio_format": "mp3",
+    "output_filename": "",
+    "chat_id": "123456789",
+    "progress_chat_id": "123456789",
+    "progress_message_id": "65",
+    "reply_to_message_id": "",
+    "dispatch_key": "123456789-65-audio"
+  }
+}
+```
+
+Use the same workflow for video-to-audio requests by passing the video URL as `source_url` and selecting the desired `audio_format`.
 
 ### Torrent list request
 
@@ -283,6 +307,7 @@ youtube-video-local-api.yml
 tiktok-direct-local-api.yml
 facebook-long-video-local-api.yml
 video-compress.yml
+audio-media.yml
 torrent-document-local-api.yml
 package-inspect.yml
 package-repack.yml
@@ -337,6 +362,20 @@ Use `send_as=zip` only with `video-compress.yml` or the ZIP path in `remote-medi
 
 Dedicated YouTube, TikTok, and Facebook video workflows ignore `send_as`; sending `document` to them will not turn the result into a document.
 
+
+## Choosing `audio_format`
+
+Use `audio_format` only with `audio-media.yml`.
+
+| Format | User-facing behavior |
+|:---:|---|
+| `mp3` | Send a standard MP3 audio file. |
+| `m4a` | Send an AAC/M4A audio file. |
+| `raw` | Keep the downloaded audio format when possible. |
+| `voice` | Send the result as a Telegram voice message. |
+
+For video-to-audio requests, pass the original video link as `source_url`; the worker extracts the audio stream and discards the video track.
+
 ## Choosing `document_mode`
 
 Use only with `remote-media.yml`.
@@ -373,3 +412,4 @@ For torrent split deliveries, the bot should tell the user that `.part001`, `.pa
 - Keep a fallback message for workflow failure.
 - Avoid echoing raw GitHub logs to users.
 - Never expose repository secrets, cookies, private URLs, or full workflow logs.
+- For audio fallback, be ready to show a friendly failure if the workflow cannot confidently resolve the intended track.
