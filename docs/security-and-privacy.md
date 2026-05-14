@@ -26,6 +26,7 @@ The workflows can receive or generate sensitive data:
 - normalized URL,
 - video ID,
 - requested output filename,
+- audio search query,
 - Telegram bot token,
 - destination chat ID,
 - progress chat ID,
@@ -72,7 +73,7 @@ Do not share raw logs publicly. Before sharing logs:
 - remove filenames if they expose private content,
 - remove Telegram API responses that may include private metadata.
 
-The generic workflow contains log sanitization helpers, but external tools may print new patterns that are not covered.
+The generic workflow and audio worker contain log sanitization helpers, but external tools may print new patterns that are not covered.
 
 Package Inspector stores bot-readable manifests as encrypted `.enc` files under `.package_manifests/`. The bot should decrypt the manifest locally, avoid printing file names from the manifest into public logs, and delete the `.enc` file after successful read.
 
