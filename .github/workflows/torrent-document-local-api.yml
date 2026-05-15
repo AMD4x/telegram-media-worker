@@ -17,6 +17,7 @@ on:
           - "list"
           - "selected"
           - "all"
+          - "selftest"
       selected_files:
         description: "Torrent file indexes to download, e.g. 1 or 1,3 or 1-4. Used when file_mode=selected."
         required: false
@@ -983,7 +984,7 @@ jobs:
           echo "::add-mask::${TELEGRAM_API_HASH}"
 
           case "$FILE_MODE" in
-            list|selected|all)
+            list|selected|all|selftest)
               ;;
             *)
               FILE_MODE="list"
@@ -1071,6 +1072,25 @@ jobs:
           fi
 
           SPLIT_PART_BYTES="$((SPLIT_PART_MIB * 1024 * 1024))"
+                    if [ "$FILE_MODE" = "selftest" ]; then
+            echo "TORRENT_SELFTEST=1"
+
+            test_name="Berlin_and_the_Lady_with_an_Ermine_S01E03_1080p_WEB_h264_EDITH_EZTVx_to_extra_extra_extra_extra.mkv.zip"
+            test_part_name="$(safe_split_zip_part_filename "$test_name" "selftest-1" "part001")"
+
+            case "$test_part_name" in
+              *.zip.part001)
+                echo "TORRENT_SELFTEST_SUFFIX_OK=.zip.part001"
+                echo "TORRENT_SELFTEST_RESULT=ok"
+                exit 0
+                ;;
+              *)
+                echo "ERROR: selftest failed; ZIP part suffix was not preserved."
+                echo "TORRENT_SELFTEST_RESULT=failed"
+                exit 1
+                ;;
+            esac
+          fi
 
           progress_stage "preparing" "10" "Preparing" "Preparing_worker"
 
