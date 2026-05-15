@@ -414,6 +414,50 @@ jobs:
             printf "%s" "$name"
           }
 
+          safe_split_zip_part_filename() {
+            local display_name="${1:-}"
+            local idx="${2:-file}"
+            local part_suffix="${3:-part001}"
+            local name=""
+            local base=""
+            local suffix=""
+            local max_base_len=""
+
+            name="$(basename "${display_name:-}")"
+
+            if command -v iconv >/dev/null 2>&1; then
+              name="$(printf "%s" "$name" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || printf "%s" "$name")"
+            fi
+
+            name="$(printf "%s" "$name" | tr -d '\000-\037' | sed 's/[\\/*?:"<>|;]//g; s/[^A-Za-z0-9._ -]/_/g; s/[[:space:]][[:space:]]*/ /g; s/^[ ._-]*//; s/[ ._-]*$//')"
+
+            if [ -z "$name" ]; then
+              name="torrent-document-${idx}.zip"
+            fi
+
+            suffix=".zip.${part_suffix}"
+            base="${name%.zip}"
+
+            if [ "$base" = "$name" ]; then
+              base="${name%.*}"
+            fi
+
+            if [ -z "$base" ]; then
+              base="torrent-document-${idx}"
+            fi
+
+            max_base_len="$((100 - ${#suffix}))"
+            if [ "$max_base_len" -lt 1 ]; then
+              max_base_len=1
+            fi
+
+            if [ "${#base}" -gt "$max_base_len" ]; then
+              base="${base:0:$max_base_len}"
+            fi
+
+            printf "%s" "${base}${suffix}"
+          }
+
           is_success_http_code() {
             case "$1" in
               2*)
@@ -813,7 +857,7 @@ jobs:
 
             while [ "$part_index" -le "$part_count" ]; do
               skip_mib="$(( (part_index - 1) * SPLIT_PART_MIB ))"
-              part_name="$(safe_upload_filename "${display_name}.part$(printf "%03d" "$part_index")" "${file_index}-${part_index}")"
+              part_name="$(safe_split_zip_part_filename "$display_name" "${file_index}-${part_index}" "part$(printf "%03d" "$part_index")")"
               part_path="$RUNNER_TEMP/${part_name}"
 
               rm -f "$part_path"
