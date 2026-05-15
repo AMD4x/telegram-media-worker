@@ -18,6 +18,7 @@ on:
           - "selected"
           - "all"
           - "selftest"
+          - "send_name_test"
       selected_files:
         description: "Torrent file indexes to download, e.g. 1 or 1,3 or 1-4. Used when file_mode=selected."
         required: false
@@ -984,7 +985,7 @@ jobs:
           echo "::add-mask::${TELEGRAM_API_HASH}"
 
           case "$FILE_MODE" in
-            list|selected|all|selftest)
+            list|selected|all|selftest|send_name_test)
               ;;
             *)
               FILE_MODE="list"
@@ -1072,7 +1073,8 @@ jobs:
           fi
 
           SPLIT_PART_BYTES="$((SPLIT_PART_MIB * 1024 * 1024))"
-                    if [ "$FILE_MODE" = "selftest" ]; then
+
+          if [ "$FILE_MODE" = "selftest" ]; then
             echo "TORRENT_SELFTEST=1"
 
             test_name="Berlin_and_the_Lady_with_an_Ermine_S01E03_1080p_WEB_h264_EDITH_EZTVx_to_extra_extra_extra_extra.mkv.zip"
@@ -1090,6 +1092,36 @@ jobs:
                 exit 1
                 ;;
             esac
+          fi
+
+          if [ "$FILE_MODE" = "send_name_test" ]; then
+            echo "TORRENT_SEND_NAME_TEST=1"
+
+            test_file="$RUNNER_TEMP/torrent-name-test.bin"
+            test_name="Berlin_and_the_Lady_with_an_Ermine_S01E03_1080p_WEB_h264_EDITH_E.zip.part001"
+            test_response="$RUNNER_TEMP/telegram-name-test.json"
+            test_caption="🧪 Torrent ZIP part filename test"
+
+            printf "AMD4x filename test\n" > "$test_file"
+
+            test_http_code="$(telegram_send_document_request_with_retry \
+              "https://api.telegram.org/bot${TELEGRAM_TOKEN}" \
+              "$test_file" \
+              "$test_name" \
+              "$test_caption" \
+              "$test_response" \
+              "send_name_test")"
+
+            echo "TORRENT_SEND_NAME_TEST_HTTP_CODE=${test_http_code}"
+
+            if ! is_success_http_code "$test_http_code" || ! grep -q '"ok":true' "$test_response"; then
+              echo "ERROR: send_name_test failed."
+              exit 1
+            fi
+
+            echo "TORRENT_SEND_NAME_TEST_SENT=1"
+            echo "TORRENT_SEND_NAME_TEST_EXPECTED_SUFFIX=.zip.part001"
+            exit 0
           fi
 
           progress_stage "preparing" "10" "Preparing" "Preparing_worker"
