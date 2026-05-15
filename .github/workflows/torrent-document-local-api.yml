@@ -437,12 +437,14 @@ jobs:
               name="torrent-document-${idx}.zip"
             fi
 
-            suffix=".zip.${part_suffix}"
+            suffix="__ZIP__.${part_suffix}"
             base="${name%.zip}"
 
             if [ "$base" = "$name" ]; then
               base="${name%.*}"
             fi
+
+            base="${base%__ZIP__}"
 
             if [ -z "$base" ]; then
               base="torrent-document-${idx}"
@@ -1081,13 +1083,13 @@ jobs:
             test_part_name="$(safe_split_zip_part_filename "$test_name" "selftest-1" "part001")"
 
             case "$test_part_name" in
-              *.zip.part001)
-                echo "TORRENT_SELFTEST_SUFFIX_OK=.zip.part001"
+              *__ZIP__.part001)
+                echo "TORRENT_SELFTEST_SUFFIX_OK=__ZIP__.part001"
                 echo "TORRENT_SELFTEST_RESULT=ok"
                 exit 0
                 ;;
               *)
-                echo "ERROR: selftest failed; ZIP part suffix was not preserved."
+                echo "ERROR: selftest failed; ZIP marker suffix was not preserved."
                 echo "TORRENT_SELFTEST_RESULT=failed"
                 exit 1
                 ;;
@@ -1098,9 +1100,9 @@ jobs:
             echo "TORRENT_SEND_NAME_TEST=1"
 
             test_file="$RUNNER_TEMP/torrent-name-test.bin"
-            test_name="Berlin_and_the_Lady_with_an_Ermine_S01E03_1080p_WEB_h264_EDITH_E.zip.part001"
+            test_name="Berlin_and_the_Lady_with_an_Ermine_S01E03_1080p_WEB_h264_EDITH_E__ZIP__.part001"
             test_response="$RUNNER_TEMP/telegram-name-test.json"
-            test_caption="🧪 Torrent ZIP part filename test"
+            test_caption="🧪 Torrent ZIP marker filename test"
 
             printf "AMD4x filename test\n" > "$test_file"
 
@@ -1120,7 +1122,7 @@ jobs:
             fi
 
             echo "TORRENT_SEND_NAME_TEST_SENT=1"
-            echo "TORRENT_SEND_NAME_TEST_EXPECTED_SUFFIX=.zip.part001"
+            echo "TORRENT_SEND_NAME_TEST_EXPECTED_SUFFIX=__ZIP__.part001"
             exit 0
           fi
 
