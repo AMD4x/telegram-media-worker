@@ -17,8 +17,6 @@ on:
           - "list"
           - "selected"
           - "all"
-          - "selftest"
-          - "send_name_test"
       selected_files:
         description: "Torrent file indexes to download, e.g. 1 or 1,3 or 1-4. Used when file_mode=selected."
         required: false
@@ -416,52 +414,6 @@ jobs:
             printf "%s" "$name"
           }
 
-          safe_split_zip_part_filename() {
-            local display_name="${1:-}"
-            local idx="${2:-file}"
-            local part_suffix="${3:-part001}"
-            local name=""
-            local base=""
-            local suffix=""
-            local max_base_len=""
-
-            name="$(basename "${display_name:-}")"
-
-            if command -v iconv >/dev/null 2>&1; then
-              name="$(printf "%s" "$name" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || printf "%s" "$name")"
-            fi
-
-            name="$(printf "%s" "$name" | tr -d '\000-\037' | sed 's/[\\/*?:"<>|;]//g; s/[^A-Za-z0-9._ -]/_/g; s/[[:space:]][[:space:]]*/ /g; s/^[ ._-]*//; s/[ ._-]*$//')"
-
-            if [ -z "$name" ]; then
-              name="torrent-document-${idx}.zip"
-            fi
-
-            suffix=".z${part_suffix}"
-            base="${name%.zip}"
-
-            if [ "$base" = "$name" ]; then
-              base="${name%.*}"
-            fi
-
-            base="${base%__ZIP__}"
-
-            if [ -z "$base" ]; then
-              base="torrent-document-${idx}"
-            fi
-
-            max_base_len="$((100 - ${#suffix}))"
-            if [ "$max_base_len" -lt 1 ]; then
-              max_base_len=1
-            fi
-
-            if [ "${#base}" -gt "$max_base_len" ]; then
-              base="${base:0:$max_base_len}"
-            fi
-
-            printf "%s" "${base}${suffix}"
-          }
-
           is_success_http_code() {
             case "$1" in
               2*)
@@ -646,7 +598,7 @@ jobs:
 
             total_size_text="$(format_bytes_for_telegram "${total_bytes:-0}")"
 
-            printf -v text '📦 <b>Large GitHub ZIP Document</b>\n\nThe file is larger than Telegram single-file limit, so it was packed as a ZIP first, then the ZIP package will be sent in <b>%s parts</b>.\n\n📥 <b>ZIP Size:</b> <code>%s</code>\nℹ️ <i>Download all parts, join them in order to restore the ZIP file, then extract it.</i>' \
+            printf -v text '📦 <b>Large GitHub Document</b>\n\nThe file is larger than Telegram single-file limit, so it will be sent in <b>%s parts</b>.\n\n📥 <b>Total Size:</b> <code>%s</code>\nℹ️ <i>Download all parts, then join them in order to restore the original file.</i>' \
               "$parts_count" \
               "$total_size_text"
 
@@ -658,63 +610,6 @@ jobs:
               -F "parse_mode=HTML" \
               -F "disable_web_page_preview=true" \
               -F "text=${text}" >/dev/null 2>&1 || true
-          }
-
-          SPLIT_ZIP_PATH=""
-          SPLIT_ZIP_NAME=""
-
-          build_zip_for_split_delivery() {
-            local source_path="$1"
-            local display_name="$2"
-            local file_index="$3"
-            local files_total="${4:-1}"
-            local zip_name=""
-            local zip_path=""
-            local zip_size=""
-
-            if [ ! -f "$source_path" ]; then
-              echo "ERROR: Source file missing before ZIP packaging."
-              exit 1
-            fi
-
-            zip_name="$(safe_upload_filename "${display_name}.zip" "${file_index}-zip")"
-            zip_path="$RUNNER_TEMP/torrent-split-${file_index}-${zip_name}"
-
-            rm -f "$zip_path"
-
-            progress_stage "packaging_zip" "82" "Packaging" "Packaging_large_torrent_file_as_zip"
-            telegram_edit_torrent_summary "📦 <b>GitHub Torrent packaging ZIP</b>" "⏳ <i>Packing the large torrent file before split delivery...</i>" "$(stat -c%s "$source_path" 2>/dev/null || echo 0)" "local" "ZIP package" "${file_index}/${files_total}"
-
-            python3 - "$source_path" "$zip_path" "$display_name" <<'PY'
-          import os
-          import sys
-          import zipfile
-          
-          source_path, zip_path, inner_name = sys.argv[1:4]
-          inner_name = os.path.basename(inner_name).strip() or os.path.basename(source_path).strip() or "torrent-document.bin"
-          
-          with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as zf:
-              zf.write(source_path, arcname=inner_name)
-          PY
-
-            if [ ! -f "$zip_path" ]; then
-              echo "ERROR: ZIP package was not created."
-              exit 1
-            fi
-
-            zip_size="$(stat -c%s "$zip_path" 2>/dev/null || echo 0)"
-            if [ "$zip_size" -le 0 ]; then
-              echo "ERROR: ZIP package is empty."
-              exit 1
-            fi
-
-            SPLIT_ZIP_PATH="$zip_path"
-            SPLIT_ZIP_NAME="$zip_name"
-
-            echo "TORRENT_SPLIT_ZIP_CREATED=1"
-            echo "TORRENT_SPLIT_ZIP_NAME=masked"
-            echo "::add-mask::${zip_size}"
-            echo "TORRENT_SPLIT_ZIP_SIZE_BYTES=masked"
           }
 
           send_document_file() {
@@ -761,11 +656,7 @@ jobs:
             upload_path="$RUNNER_TEMP/telegram-upload-${file_index}-${upload_name}"
 
             if [ "$file_size" -gt "$LOCAL_BOT_API_MAX_BYTES" ]; then
-              build_zip_for_split_delivery "$file_path" "$display_name" "$file_index" "$files_total"
-              send_large_file_as_parts "$SPLIT_ZIP_PATH" "$SPLIT_ZIP_NAME" "$caption_prefix" "$file_index" "$files_total"
-              rm -f "$SPLIT_ZIP_PATH" || true
-              SPLIT_ZIP_PATH=""
-              SPLIT_ZIP_NAME=""
+              send_large_file_as_parts "$file_path" "$display_name" "$caption_prefix" "$file_index" "$files_total"
               return 0
             fi
 
@@ -861,7 +752,7 @@ jobs:
 
             while [ "$part_index" -le "$part_count" ]; do
               skip_mib="$(( (part_index - 1) * SPLIT_PART_MIB ))"
-              part_name="$(safe_split_zip_part_filename "$display_name" "${file_index}-${part_index}" "part$(printf "%03d" "$part_index")")"
+              part_name="$(safe_upload_filename "${display_name}.part$(printf "%03d" "$part_index")" "${file_index}-${part_index}")"
               part_path="$RUNNER_TEMP/${part_name}"
 
               rm -f "$part_path"
@@ -902,7 +793,7 @@ jobs:
 
               printf -v caption '%s\n📄 %s\n🧩 Part %s/%s\n📦 %s / %s' "$caption_prefix" "$safe_display" "$part_index" "$part_count" "$part_size_text" "$file_size_text"
 
-              telegram_edit_torrent_summary "✅ <b>GitHub Torrent ZIP part ${part_index}/${part_count}</b>" "⏳ <i>Sending split ZIP document part to Telegram...</i>" "$part_size" "local" "ZIP document part" "${file_index}/${files_total}"
+              telegram_edit_torrent_summary "✅ <b>GitHub Torrent part ${part_index}/${part_count}</b>" "⏳ <i>Sending split document part to Telegram...</i>" "$part_size" "local" "Document part" "${file_index}/${files_total}"
 
               response_file="$RUNNER_TEMP/telegram-document-part-${file_index}-${part_index}.json"
               http_code="$(telegram_send_document_request_with_retry "$api_base" "$part_path" "$part_name" "$caption" "$response_file" "document_part")"
@@ -918,7 +809,7 @@ jobs:
               TOTAL_SENT_FILES=$((TOTAL_SENT_FILES + 1))
               TOTAL_SENT_BYTES=$((TOTAL_SENT_BYTES + part_size))
               LAST_SEND_MODE="local"
-              LAST_SEND_METHOD="ZIP document parts"
+              LAST_SEND_METHOD="Document parts"
 
               rm -f "$part_path"
               part_index="$((part_index + 1))"
@@ -987,7 +878,7 @@ jobs:
           echo "::add-mask::${TELEGRAM_API_HASH}"
 
           case "$FILE_MODE" in
-            list|selected|all|selftest|send_name_test)
+            list|selected|all)
               ;;
             *)
               FILE_MODE="list"
@@ -1075,56 +966,6 @@ jobs:
           fi
 
           SPLIT_PART_BYTES="$((SPLIT_PART_MIB * 1024 * 1024))"
-
-          if [ "$FILE_MODE" = "selftest" ]; then
-            echo "TORRENT_SELFTEST=1"
-
-            test_name="Berlin_and_the_Lady_with_an_Ermine_S01E03_1080p_WEB_h264_EDITH_EZTVx_to_extra_extra_extra_extra.mkv.zip"
-            test_part_name="$(safe_split_zip_part_filename "$test_name" "selftest-1" "part001")"
-
-            case "$test_part_name" in
-              *.zpart001)
-                echo "TORRENT_SELFTEST_SUFFIX_OK=.zpart001"
-                echo "TORRENT_SELFTEST_RESULT=ok"
-                exit 0
-                ;;
-              *)
-                echo "ERROR: selftest failed; ZIP split suffix was not preserved."
-                echo "TORRENT_SELFTEST_RESULT=failed"
-                exit 1
-                ;;
-            esac
-          fi
-
-          if [ "$FILE_MODE" = "send_name_test" ]; then
-            echo "TORRENT_SEND_NAME_TEST=1"
-
-            test_file="$RUNNER_TEMP/torrent-name-test.bin"
-            test_name="Berlin_and_the_Lady_with_an_Ermine_S01E03_1080p_WEB_h264_EDITH_E.zpart001"
-            test_response="$RUNNER_TEMP/telegram-name-test.json"
-            test_caption="🧪 Torrent ZIP split filename test"
-
-            printf "AMD4x filename test\n" > "$test_file"
-
-            test_http_code="$(telegram_send_document_request_with_retry \
-              "https://api.telegram.org/bot${TELEGRAM_TOKEN}" \
-              "$test_file" \
-              "$test_name" \
-              "$test_caption" \
-              "$test_response" \
-              "send_name_test")"
-
-            echo "TORRENT_SEND_NAME_TEST_HTTP_CODE=${test_http_code}"
-
-            if ! is_success_http_code "$test_http_code" || ! grep -q '"ok":true' "$test_response"; then
-              echo "ERROR: send_name_test failed."
-              exit 1
-            fi
-
-            echo "TORRENT_SEND_NAME_TEST_SENT=1"
-            echo "TORRENT_SEND_NAME_TEST_EXPECTED_SUFFIX=.zpart001"
-            exit 0
-          fi
 
           progress_stage "preparing" "10" "Preparing" "Preparing_worker"
 
