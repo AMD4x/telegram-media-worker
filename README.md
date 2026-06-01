@@ -25,7 +25,8 @@ This repository runs temporary media jobs on GitHub-hosted runners, prepares the
 
 ## Why this exists
 
-Small home servers, Raspberry Pi bots, and lightweight Telegram bot hosts are good controllers, but they are not always ideal for long media extraction, conversion, and upload tasks. This worker lets the bot delegate heavy work to an isolated GitHub Actions run, update the user with progress, then deliver the final Telegram message.
+Small home servers, Raspberry Pi bots, and lightweight Telegram bot hosts are good controllers, but they are not always ideal for long media extraction, conversion, and upload tasks. This worker lets a bot delegate heavy work to an isolated GitHub Actions run, update the user with progress, and deliver the final Telegram result without keeping a permanent media server online.
+It is also useful in public-interest and censorship-resilience contexts, where users may face unreliable infrastructure, restricted access, or costly local resources. In places such as Iran, where many people struggle against severe internet restrictions, a lightweight remote worker can help users retrieve lawful public content more reliably while reducing the burden on small self-hosted bots.
 
 ## Current workflow family
 
