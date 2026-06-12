@@ -45,7 +45,7 @@ COPY --from=telegram_bot_api_builder /usr/local/bin/telegram-bot-api /usr/local/
 RUN curl -fsSL https://deno.land/install.sh | sh
 
 RUN python3 -m pip install --upgrade pip \
-    && python3 -m pip install --upgrade --pre "yt-dlp[default]"
+    && python3 -m pip install --upgrade --pre "yt-dlp[default,curl-cffi]"
 
 RUN python3 -m yt_dlp --version \
     && deno --version \
