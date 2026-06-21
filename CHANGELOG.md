@@ -5,6 +5,25 @@ All notable changes to this repository can be documented in this file.
 The format loosely follows "Keep a Changelog" style, with simple sections for Added, Changed, Fixed, and Security.
 
 
+## [v1.6.0] — 2026-06-21
+
+### Security
+
+- Hardened GitHub Actions logs so original media/source URLs, requested output filenames, package rename maps, Telegram progress identifiers, and bot dispatch keys are not passed through workflow `env:` blocks where GitHub can print them before masking starts.
+- Updated sensitive workflow input handling to load values inside runtime steps from `GITHUB_EVENT_PATH`, then mask them immediately before use.
+- Removed sensitive caller correlation data from workflow titles. Bot integrations should keep `dispatch_key` opaque and store chat/message/user/source mappings on the bot side.
+
+### Fixed
+
+- Improved Package Inspector metadata fetching for magnet links used by Package Browser / Repacker flows.
+- Extracted magnet `tr=` trackers and passed them to `aria2c`, stored torrent metadata in a dedicated metadata directory, and searched additional runner paths for the resulting `.torrent` file.
+- Added compact, safe torrent metadata diagnostics such as `TORRENT_METADATA_FETCH_RC` and `TORRENT_METADATA_FILE_FOUND` without printing magnet links, info hashes, or user filenames.
+
+### Changed
+
+- Updated the worker image dependency install to use `yt-dlp[default,curl-cffi]`.
+- Documented the log-safety boundary for sensitive workflow inputs while keeping public workflow input names and bot dispatch behavior unchanged.
+
 ## [v1.5.0] — 2026-05-14
 
 ### Added
@@ -12,7 +31,7 @@ The format loosely follows "Keep a Changelog" style, with simple sections for Ad
 - Added `audio-media.yml` as a standalone audio extraction and conversion workflow.
 - Added `scripts/audio_media/audio_media_worker.py` for downloading audio, converting video URLs to audio, resolving metadata fallback sources, and sending audio or voice output to Telegram.
 - Added `docs/audio-media-worker.md` with public usage notes for the audio worker.
-- Added `examples/audio-media.json` as a workflow dispatch example.
+- Added `examples/audio-media` as a workflow dispatch example.
 
 ### Changed
 

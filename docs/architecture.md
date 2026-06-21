@@ -14,7 +14,7 @@ The repository does not need a permanent media-processing server. GitHub Actions
 |---|---|
 | GitHub Actions workflow | Main execution unit. Each workflow is a remote worker. |
 | `ghcr.io/amd4x/tg-video-worker:latest` | Container image used by workflows. It must contain the runtime tools. |
-| `yt-dlp` | Extracts and downloads media from supported platforms. |
+| `yt-dlp` | Extracts and downloads media from supported platforms. The worker image installs `yt-dlp[default,curl-cffi]`. |
 | `ffmpeg` | Converts, remuxes, normalizes, compresses, or prepares media. |
 | Audio Media Worker | Standalone audio extraction and conversion path for audio links, video-to-audio jobs, and music metadata fallback. |
 | `ffprobe` | Reads codecs, dimensions, duration, streams, and metadata. |
@@ -26,13 +26,14 @@ The repository does not need a permanent media-processing server. GitHub Actions
 
 ## Request lifecycle
 
-1. A caller provides `media_url` and optional runtime inputs.
+1. A caller provides a workflow source input such as `media_url`, `source_url`, or `torrent_url`, plus optional runtime inputs.
 2. The workflow validates required inputs and secrets.
-3. Sensitive values are masked in GitHub Actions logs.
-4. The workflow detects the platform or validates that the URL matches the dedicated workflow.
-5. The workflow prepares cookies when the target platform supports repository cookie secrets.
-6. The workflow downloads the media/file.
-7. The workflow prepares the output:
+3. Sensitive dispatch inputs are loaded after the runner starts from the GitHub event payload instead of being exposed through the Actions env block.
+4. Sensitive values are masked in GitHub Actions logs before use.
+5. The workflow detects the platform or validates that the URL matches the dedicated workflow.
+6. The workflow prepares cookies when the target platform supports repository cookie secrets.
+7. The workflow downloads the media/file.
+8. The workflow prepares the output:
    - video normalization,
    - fast remux,
    - safe transcode,
@@ -40,9 +41,9 @@ The repository does not need a permanent media-processing server. GitHub Actions
    - document wrapping,
    - audio extraction/conversion,
    - or ZIP splitting.
-8. The workflow chooses the Telegram upload API.
-9. The workflow sends the final result to Telegram.
-10. If progress inputs exist, the workflow edits the existing progress message throughout the run.
+9. The workflow chooses the Telegram upload API.
+10. The workflow sends the final result to Telegram.
+11. If progress inputs exist, the workflow edits the existing progress message throughout the run.
 
 ## Progress update model
 
@@ -72,13 +73,19 @@ The workflows use `::add-mask::` for sensitive runtime values such as:
 - normalized URL,
 - video ID,
 - output filename,
+- dispatch key,
+- reply-to message ID,
 - Telegram token,
 - Telegram chat ID,
 - Telegram progress chat/message IDs,
 - Telegram API ID/hash,
+- package rename maps,
+- selected package or torrent indexes,
 - some computed file sizes and file paths.
 
 The generic workflow also includes a safe log-printing helper that replaces URLs, IDs, and sizes before printing selected logs.
+
+Sensitive workflow inputs are intentionally kept out of workflow titles and Actions `env:` blocks where possible. `dispatch_key` should be opaque; the bot owns the private mapping from that key to chat, message, user, URL, and filename state.
 
 Important: masking helps, but raw logs should still be treated as private because external tool output can change.
 

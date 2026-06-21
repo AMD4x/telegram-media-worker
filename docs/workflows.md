@@ -54,7 +54,9 @@ Generic worker for:
 | `document_mode` | No | `zip` | `zip` or `original`; invalid values become `zip`. Ignored unless `send_as=document`. |
 | `progress_chat_id` | No | empty | Progress message chat ID. |
 | `progress_message_id` | No | empty | Progress message ID. |
-| `dispatch_key` | No | empty | Caller tracking key. |
+| `dispatch_key` | No | empty | Opaque caller tracking key. Masked in logs and not exposed in the run name. |
+
+Sensitive inputs such as `media_url`, `output_filename`, progress IDs, and `dispatch_key` are loaded inside the runtime step from the GitHub event payload, then masked before use. Do not move them into Actions `env:` blocks or run names.
 
 ### Core stages
 
@@ -62,7 +64,7 @@ Generic worker for:
 2. Normalize `send_as` and `document_mode`.
 3. Define Telegram and file-size limits.
 4. Validate URL and Telegram secrets.
-5. Mask sensitive values.
+5. Load sensitive dispatch inputs from the event payload and mask sensitive values.
 6. Detect platform and referer.
 7. Prepare platform cookies when available.
 8. Build candidate video heights.
@@ -195,7 +197,9 @@ Standalone audio worker for:
 | `progress_chat_id` | No | final chat | Progress-message chat. |
 | `progress_message_id` | No | auto-create | Existing progress message to edit. |
 | `reply_to_message_id` | No | empty | Telegram message id to reply to when sending the final audio. |
-| `dispatch_key` | No | `manual` | Caller tracking key. It is not exposed in the run name. |
+| `dispatch_key` | No | `manual` | Opaque caller tracking key. It is masked in logs and not exposed in the run name. |
+
+Sensitive inputs such as `source_url`, `search_query`, `output_filename`, chat/progress IDs, reply IDs, and `dispatch_key` are loaded inside the runtime step from the GitHub event payload, then masked before use.
 
 ### Output formats
 
@@ -263,7 +267,7 @@ Admin-oriented torrent document workflow for:
 | `split_part_mib` | No | `1900` | Split size in MiB. Values are clamped to a safe range. |
 | `progress_chat_id` | No | empty | Progress message chat ID. |
 | `progress_message_id` | No | empty | Progress message ID. |
-| `dispatch_key` | No | `manual` | Caller tracking key; masked in logs and not exposed in the run name. |
+| `dispatch_key` | No | `manual` | Opaque caller tracking key; masked in logs and not exposed in the run name. |
 
 ### Modes
 
@@ -336,7 +340,7 @@ Package source inspector used by bot-side Package Browser integrations. It reads
 | `source_url` | yes | - | Archive, direct file, torrent, magnet, directory listing, or URL list to inspect. |
 | `progress_chat_id` | no | empty | Progress-message chat. |
 | `progress_message_id` | no | empty | Existing progress message to edit. |
-| `dispatch_key` | no | `manual` | Bot-side tracking key and encrypted-manifest filename seed. |
+| `dispatch_key` | no | `manual` | Opaque bot-side tracking key and encrypted-manifest filename seed. |
 | `send_telegram` | no | `true` | Sends a compact Telegram inspection report when enabled. |
 
 ### Manifest behavior
@@ -345,6 +349,10 @@ Package source inspector used by bot-side Package Browser integrations. It reads
 - Encrypts the manifest using `PACKAGE_MANIFEST_KEY`.
 - Publishes only the encrypted `.enc` manifest under `.package_manifests/`.
 - Prints only generic completion markers such as `PACKAGE_INSPECT_COMPLETED` and `MANIFEST_STORE_OK=1`.
+
+For magnet sources, Package Inspector tries torrent metadata caches first, then asks `aria2c` to fetch metadata. It extracts `tr=` trackers from the magnet link, uses a dedicated metadata directory, searches multiple runner paths for the resulting `.torrent` file, and prints only safe markers such as `TORRENT_METADATA_FETCH_RC` and `TORRENT_METADATA_FILE_FOUND`.
+
+Sensitive inputs such as `source_url`, progress IDs, and `dispatch_key` are loaded inside runtime steps from the GitHub event payload, then masked before use.
 
 ### Bot behavior
 
@@ -368,7 +376,9 @@ Package item repacker used after `package-inspect.yml`. It rebuilds a ZIP from s
 | `split_part_mib` | no | `1900` | Split size in MiB for oversized ZIP output. |
 | `progress_chat_id` | no | empty | Progress-message chat. |
 | `progress_message_id` | no | empty | Existing progress message to edit. |
-| `dispatch_key` | no | `manual` | Bot-side tracking key. |
+| `dispatch_key` | no | `manual` | Opaque bot-side tracking key. |
+
+Sensitive inputs such as `source_url`, `rename_map_json`, `output_filename`, progress IDs, and `dispatch_key` are loaded inside the runtime step from the GitHub event payload, then masked before use. Rename maps and output names can reveal private package structure.
 | `send_telegram` | no | `true` | Sends output ZIP to Telegram when enabled. |
 
 ### Rename behavior
@@ -395,7 +405,7 @@ YouTube-specific video-only workflow that downloads a YouTube URL, prepares a Te
 | `output_filename` | Ignored compatibility input. |
 | `progress_chat_id` | Optional progress target. |
 | `progress_message_id` | Optional progress target. |
-| `dispatch_key` | Optional tracking key; default `manual`. |
+| `dispatch_key` | Optional opaque tracking key; default `manual`. Masked in logs and not exposed in the run name. |
 
 ### Required secrets
 
@@ -462,7 +472,7 @@ TikTok-specific video-only workflow focused on getting a clean playable TikTok v
 | `output_filename` | Declared as compatibility input but not used in the run environment. |
 | `progress_chat_id` | Optional progress target. |
 | `progress_message_id` | Optional progress target. |
-| `dispatch_key` | Declared as an input but not used in the run environment. |
+| `dispatch_key` | Optional opaque tracking key; read and masked for log safety, but it does not change TikTok download or upload behavior. |
 
 ### Required secrets
 
@@ -532,7 +542,7 @@ Facebook-specific video-only workflow for long videos, using Local Bot API and c
 | `output_filename` | Ignored compatibility input. |
 | `progress_chat_id` | Optional progress target. |
 | `progress_message_id` | Optional progress target. |
-| `dispatch_key` | Optional tracking key; default `manual`. |
+| `dispatch_key` | Optional opaque tracking key; default `manual`. Masked in logs and not exposed in the run name. |
 
 ### Required secrets
 
@@ -594,7 +604,7 @@ Independent remote video-compression workflow. It downloads a source video, comp
 | `progress_chat_id` | no | final chat | Progress-message chat. |
 | `progress_message_id` | no | auto-create | Existing progress message to edit. |
 | `reply_to_message_id` | no | empty | Optional Telegram message id to reply to when sending the final output. |
-| `dispatch_key` | no | `manual` | Bot-side tracking key. It is masked in logs and not exposed in the run name or job outputs. |
+| `dispatch_key` | no | `manual` | Opaque bot-side tracking key. It is masked in logs and not exposed in the run name or job outputs. |
 
 ### Output behavior
 

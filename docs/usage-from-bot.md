@@ -49,7 +49,7 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
     "send_as": "video",
     "progress_chat_id": "123456789",
     "progress_message_id": "55",
-    "dispatch_key": "123456789-55-abcd"
+    "dispatch_key": "task_a1b2c3d4e5f60718293a4b5c6d7e8f90"
   }
 }
 ```
@@ -67,7 +67,7 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
     "output_filename": "download.zip",
     "progress_chat_id": "123456789",
     "progress_message_id": "56",
-    "dispatch_key": "123456789-56-abcd"
+    "dispatch_key": "task_b2c3d4e5f60718293a4b5c6d7e8f901a"
   }
 }
 ```
@@ -82,7 +82,7 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
     "max_height": "1080",
     "progress_chat_id": "123456789",
     "progress_message_id": "57",
-    "dispatch_key": "123456789-57-abcd"
+    "dispatch_key": "task_c3d4e5f60718293a4b5c6d7e8f901ab2"
   }
 }
 ```
@@ -97,7 +97,7 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
     "max_height": "auto",
     "progress_chat_id": "123456789",
     "progress_message_id": "58",
-    "dispatch_key": "123456789-58-abcd"
+    "dispatch_key": "task_d4e5f60718293a4b5c6d7e8f901ab2c3"
   }
 }
 ```
@@ -111,7 +111,7 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
     "media_url": "https://www.facebook.com/watch/?v=123",
     "progress_chat_id": "123456789",
     "progress_message_id": "59",
-    "dispatch_key": "123456789-59-abcd"
+    "dispatch_key": "task_e5f60718293a4b5c6d7e8f901ab2c3d4"
   }
 }
 ```
@@ -130,7 +130,7 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
     "progress_chat_id": "123456789",
     "progress_message_id": "62",
     "reply_to_message_id": "",
-    "dispatch_key": "123456789-62-abcd"
+    "dispatch_key": "task_f60718293a4b5c6d7e8f901ab2c3d4e5"
   }
 }
 ```
@@ -153,7 +153,7 @@ A Telegram bot can use this repository as a remote media worker by triggering Gi
     "progress_chat_id": "123456789",
     "progress_message_id": "65",
     "reply_to_message_id": "",
-    "dispatch_key": "123456789-65-audio"
+    "dispatch_key": "task_0718293a4b5c6d7e8f901ab2c3d4e5f6"
   }
 }
 ```
@@ -170,7 +170,7 @@ Use the same workflow for video-to-audio requests by passing the video URL as `s
     "file_mode": "list",
     "progress_chat_id": "123456789",
     "progress_message_id": "60",
-    "dispatch_key": "123456789-60-abcd"
+    "dispatch_key": "task_18293a4b5c6d7e8f901ab2c3d4e5f607"
   }
 }
 ```
@@ -187,7 +187,7 @@ Use the same workflow for video-to-audio requests by passing the video URL as `s
     "split_part_mib": "1900",
     "progress_chat_id": "123456789",
     "progress_message_id": "61",
-    "dispatch_key": "123456789-61-abcd"
+    "dispatch_key": "task_293a4b5c6d7e8f901ab2c3d4e5f60718"
   }
 }
 ```
@@ -201,7 +201,7 @@ Use the same workflow for video-to-audio requests by passing the video URL as `s
     "source_url": "https://example.com/archive.zip",
     "progress_chat_id": "123456789",
     "progress_message_id": "63",
-    "dispatch_key": "123456789-63-pkg",
+    "dispatch_key": "task_3a4b5c6d7e8f901ab2c3d4e5f6071829",
     "send_telegram": "false"
   }
 }
@@ -223,7 +223,7 @@ The bot should read `.package_manifests/<dispatch_key>.enc`, decrypt it with `PA
     "split_part_mib": "1900",
     "progress_chat_id": "123456789",
     "progress_message_id": "64",
-    "dispatch_key": "123456789-64-repack",
+    "dispatch_key": "task_4b5c6d7e8f901ab2c3d4e5f60718293a",
     "send_telegram": "true"
   }
 }

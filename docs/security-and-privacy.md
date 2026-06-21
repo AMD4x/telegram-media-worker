@@ -23,14 +23,17 @@ Use GitHub Actions repository secrets only.
 The workflows can receive or generate sensitive data:
 
 - source media URL,
+- torrent URL,
 - normalized URL,
 - video ID,
 - requested output filename,
 - audio search query,
+- dispatch key,
 - Telegram bot token,
 - destination chat ID,
 - progress chat ID,
 - progress message ID,
+- reply-to message ID,
 - Telegram API ID/hash,
 - cookie files,
 - downloaded filenames,
@@ -39,9 +42,14 @@ The workflows can receive or generate sensitive data:
 - API responses,
 - Package Inspector manifests,
 - package rename maps,
-- selected package indexes.
+- selected package indexes,
+- selected torrent indexes.
 
 The workflows mask many of these values, but masking is best-effort and does not make raw logs safe to publish.
+
+Sensitive workflow inputs are loaded inside runtime steps from `GITHUB_EVENT_PATH`, then masked before use. Do not move source URLs, output filenames, progress identifiers, package rename maps, or `dispatch_key` back into Actions `env:` blocks, run names, job outputs, or debug output.
+
+Keep `dispatch_key` opaque. The bot should store chat/message/user/source mappings locally instead of embedding those details in the key.
 
 ## Cookies
 
@@ -76,6 +84,8 @@ Do not share raw logs publicly. Before sharing logs:
 The generic workflow and audio worker contain log sanitization helpers, but external tools may print new patterns that are not covered.
 
 Package Inspector stores bot-readable manifests as encrypted `.enc` files under `.package_manifests/`. The bot should decrypt the manifest locally, avoid printing file names from the manifest into public logs, and delete the `.enc` file after successful read.
+
+Even after masking and env-block hardening, raw workflow logs should be treated as private operational data.
 
 ## Public issue policy
 

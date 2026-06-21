@@ -178,7 +178,7 @@ Completion summary example:
     "progress_chat_id": "6445942442",
     "progress_message_id": "12345",
     "reply_to_message_id": "",
-    "dispatch_key": "vc_6445942442_20260503_001"
+    "dispatch_key": "task_5c6d7e8f901ab2c3d4e5f60718293a4b"
   }
 }
 ```

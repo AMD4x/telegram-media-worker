@@ -290,6 +290,17 @@ Check:
 - the bot deletes the `.enc` file only after successful decrypt/read,
 - the bot does not print manifest contents into public logs.
 
+## Package Inspector found no items for a magnet link
+
+This usually means the GitHub runner could not fetch torrent metadata from caches, peers, DHT, or trackers within the workflow timeout.
+
+Check private workflow logs for safe metadata markers:
+
+- `TORRENT_METADATA_FETCH_RC`
+- `TORRENT_METADATA_FILE_FOUND`
+
+If `TORRENT_METADATA_FILE_FOUND=0`, try again later, use a magnet link with active trackers, or provide a direct `.torrent` file when available. The diagnostics are intentionally compact and should not include the magnet link, info hash, or user filenames.
+
 ## Package Inspector / Repacker renamed file is not at the top
 
 This is Package Browser bot-side UI behavior. Keep a rename-priority list in the bot state, move an original manifest path to the newest position after each rename, sort newest renamed items first, and remove the path when the rename is reset.

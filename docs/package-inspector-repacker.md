@@ -24,10 +24,12 @@ It is designed for bot-side flows where the bot first asks GitHub to inspect a s
 
 Actual success depends on source availability, archive support in the worker image, torrent metadata availability, and network access from the GitHub runner.
 
+For magnet links, the inspector tries torrent metadata caches first, then asks `aria2c` to fetch metadata. It extracts `tr=` trackers from the magnet link, passes them to `aria2c`, stores metadata in a dedicated directory, and searches multiple runner paths for the resulting `.torrent` file.
+
 ## Bot-side flow
 
 1. The bot receives a source URL and confirms that the admin requested package inspection.
-2. The bot triggers `package-inspect.yml` with `source_url`, progress IDs, and a unique `dispatch_key`.
+2. The bot triggers `package-inspect.yml` with `source_url`, progress IDs, and a unique opaque `dispatch_key`.
 3. The workflow builds `manifest.json`, encrypts it, and stores it as `.package_manifests/<dispatch_key>.enc`.
 4. The bot reads and decrypts the `.enc` manifest with `PACKAGE_MANIFEST_KEY`.
 5. The bot deletes the `.enc` file after successful read/decrypt.
@@ -67,6 +69,8 @@ This state is not sent to GitHub. `package-repack.yml` only receives the final s
 - `.package_manifests/*.enc` files are temporary bot handoff files.
 - `.package_manifests/*.json` and `.package_manifests/*.enc` should stay ignored by Git.
 - The bot should not print manifest file names, source URLs, selected indexes, or rename maps into public logs.
+- The bot should keep `dispatch_key` opaque and store chat/message/user/source mappings locally.
+- Package Inspector prints only safe magnet metadata diagnostics such as `TORRENT_METADATA_FETCH_RC` and `TORRENT_METADATA_FILE_FOUND`; it should not print magnet links, info hashes, or user filenames.
 - The bot should delete the encrypted manifest after successful read/decrypt.
 
 ## Relationship to torrent workflow

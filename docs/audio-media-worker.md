@@ -153,9 +153,9 @@ Optional Telegram message ID to reply to when sending the final audio.
 
 ### dispatch_key
 
-Optional external dispatch identifier.
+Optional opaque external dispatch identifier.
 
-It can be used by callers to track a request, but it is not required for manual runs.
+It can be used by callers to track a request, but it is not required for manual runs. Bot callers should not embed chat IDs, message IDs, URLs, filenames, usernames, or request details in this value.
 
 ## Required secrets
 

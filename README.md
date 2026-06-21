@@ -12,7 +12,7 @@ This repository runs temporary media jobs on GitHub-hosted runners, prepares the
 - Uses `yt-dlp`, `ffmpeg`, `ffprobe`, `curl`, Python helpers, and Telegram Bot API / Telegram Local Bot API.
 - Supports a generic `remote-media.yml` workflow, dedicated workflows for YouTube, TikTok, Facebook, torrent document delivery, Package Inspector / Repacker, remote video compression, and audio extraction.
 - Can be started manually from GitHub Actions or programmatically from a Telegram bot through `workflow_dispatch`.
-- Masks sensitive inputs in GitHub Actions logs where possible.
+- Masks sensitive inputs in GitHub Actions logs where possible and avoids exposing private dispatch values in run names.
 - Prepares Telegram/iPhone-compatible video output when the selected workflow includes compatibility preparation.
 - Supports large Telegram uploads through Local Bot API when configured.
 - Supports document ZIP mode and split ZIP parts in the generic workflow.
@@ -60,6 +60,12 @@ It is also useful in public-interest and censorship-resilience contexts, where u
 | Archive/direct file/torrent source that should be inspected before repacking | `package-inspect.yml`, then `package-repack.yml` with selected indexes and optional rename map |
 
 
+## Security update in v1.6.0
+
+`v1.6.0` hardens GitHub Actions log handling for bot-dispatched jobs. Sensitive dispatch inputs are loaded inside the runtime step from the GitHub event payload and masked before use, instead of being passed through Actions `env:` blocks or workflow titles. This protects original media URLs, requested output filenames, progress identifiers, package rename maps, and opaque `dispatch_key` values while keeping the existing public workflow input names.
+
+This release also improves Package Inspector metadata fetching for magnet links used by Package Browser / Repacker flows.
+
 ## Audio Media Worker in v1.5.0
 
 `v1.5.0` adds `audio-media.yml`, a standalone workflow for audio extraction and conversion. It can process direct audio links, supported media URLs, and video URLs that should be delivered as audio.
@@ -75,7 +81,7 @@ See [`docs/audio-media-worker.md`](docs/audio-media-worker.md) for the workflow 
 The intended bot-side flow is:
 
 1. The bot receives a package-like source URL with a package inspection request.
-2. The bot starts `package-inspect.yml` and passes a unique `dispatch_key` plus progress message IDs.
+2. The bot starts `package-inspect.yml` and passes a unique opaque `dispatch_key` plus progress message IDs.
 3. GitHub Actions builds a stable manifest of files and folders.
 4. The manifest is encrypted into `.package_manifests/<dispatch_key>.enc` using `PACKAGE_MANIFEST_KEY`.
 5. The bot decrypts the manifest, deletes the temporary `.enc` file after a successful read, and displays Package Browser.
@@ -135,7 +141,7 @@ See:
 | `document_mode` | `remote-media.yml` only | `zip` or `original`. Invalid values fall back to `zip`. |
 | `progress_chat_id` | Workflows with progress updates | Chat ID containing the progress message to edit. |
 | `progress_message_id` | Workflows with progress updates | Telegram message ID to edit. |
-| `dispatch_key` | Caller tracking | Optional task identifier used by a bot to match a run to a user request. |
+| `dispatch_key` | Opaque caller tracking | Optional opaque task identifier used by a bot to correlate a run with local bot-side state. Do not embed chat IDs, message IDs, URLs, or filenames. |
 | `file_mode` | `torrent-document-local-api.yml` only | `list`, `selected`, or `all`. |
 | `selected_files` | `torrent-document-local-api.yml` only | Torrent file indexes such as `1`, `1,2`, or `3-5`; required when `file_mode=selected`. |
 | `split_part_mib` | `torrent-document-local-api.yml` and `package-repack.yml` | Split size in MiB for files above Telegram single-file limits. |
@@ -189,6 +195,8 @@ These tools are optional. They do not change GitHub Actions workflows, Telegram 
 Never put bot tokens, cookies, private URLs, personal media links, chat IDs, message IDs, or raw workflow logs in public issues, screenshots, README examples, workflow files, or comments.
 
 The workflows mask sensitive inputs where possible, but masking is not a substitute for careful log handling. Treat raw workflow logs as private.
+
+Sensitive workflow inputs such as source URLs, output filenames, progress IDs, rename maps, and `dispatch_key` should not be reintroduced into Actions `env:` blocks, run names, job outputs, debug output, or public examples. The workflows load these values after the job starts and mask them before use.
 
 ## Project status
 
