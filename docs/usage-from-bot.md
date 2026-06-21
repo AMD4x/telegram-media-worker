@@ -315,15 +315,13 @@ package-repack.yml
 
 ## `dispatch_key`
 
-Use a unique key per task. Recommended format:
+Use an opaque unique key per task. Store any chat/message/user mapping on the bot side; do not embed Telegram IDs, URLs, or filenames in this value.
 
 ```text
-<chat_id>-<message_id>-<random_suffix>
+task_<random_128_bit_suffix>
 ```
 
-Most workflows include the key in `run-name`, which helps the bot match a run to a user task.
-
-`torrent-document-local-api.yml` intentionally does not expose `dispatch_key` in `run-name`. Bot integrations should match torrent runs by workflow file, dispatch time, branch, event type, and recent run ordering, while keeping `dispatch_key` private.
+Workflows intentionally do not expose `dispatch_key` in `run-name`. Bot integrations should match runs by workflow file, dispatch time, branch, event type, and recent run ordering, while keeping `dispatch_key` private.
 
 Package workflows use `dispatch_key` for bot correlation and encrypted manifest naming. Keep it unique per Package Inspector task so `.package_manifests/<dispatch_key>.enc` does not collide with another active request.
 
@@ -333,7 +331,7 @@ After dispatching, GitHub's dispatch endpoint does not directly return the run I
 
 1. record the dispatch time,
 2. list recent workflow runs for that workflow,
-3. match by branch, event type, created time, and `dispatch_key` in the run name when available,
+3. match by branch, event type, created time, and recent run ordering,
 4. store the run ID.
 
 ## Progress message requirements

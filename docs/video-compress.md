@@ -53,7 +53,7 @@ This keeps the workflow compatible with manual GitHub usage and bot-driven usage
 | `progress_chat_id` | no | final chat | Chat containing the progress message. |
 | `progress_message_id` | no | auto-create | Existing Telegram message to edit. If empty, the workflow creates a progress message when it has a chat id. |
 | `reply_to_message_id` | no | empty | Optional Telegram message id to reply to when sending the final output. |
-| `dispatch_key` | no | `manual` | Caller tracking key for bot-side run matching. |
+| `dispatch_key` | no | `manual` | Opaque caller tracking key for bot-side correlation. |
 
 ## Compression levels
 
@@ -195,6 +195,6 @@ Use the same GitHub token permission model already used by the bot for existing 
 
 - This workflow does not use Playwright, Chromium, or a browser runtime.
 - The worker masks Telegram credentials, chat IDs, dispatch keys, media URLs, and multiline cookies where possible.
-- `dispatch_key` is used for run matching, but it is not exported as a job output.
+- Keep `dispatch_key` opaque. It is masked in logs and not exposed in the run name or job outputs.
 - Compression can make very small or already heavily compressed videos larger at low compression levels such as `21` or `30`.
 - For the smallest practical output, use a high level such as `75` or `100`.

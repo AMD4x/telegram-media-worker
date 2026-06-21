@@ -594,7 +594,7 @@ Independent remote video-compression workflow. It downloads a source video, comp
 | `progress_chat_id` | no | final chat | Progress-message chat. |
 | `progress_message_id` | no | auto-create | Existing progress message to edit. |
 | `reply_to_message_id` | no | empty | Optional Telegram message id to reply to when sending the final output. |
-| `dispatch_key` | no | `manual` | Bot-side tracking key used in the run name. Not exported as a job output. |
+| `dispatch_key` | no | `manual` | Bot-side tracking key. It is masked in logs and not exposed in the run name or job outputs. |
 
 ### Output behavior
 

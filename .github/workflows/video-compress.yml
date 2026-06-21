@@ -1,5 +1,5 @@
 name: Video Compress To Telegram
-run-name: "AMD4x Video Compress ${{ inputs.dispatch_key }} · ${{ inputs.compression_level }} · ${{ inputs.send_as }}"
+run-name: "AMD4x Video Compress · ${{ inputs.compression_level }} · ${{ inputs.send_as }}"
 
 on:
   workflow_dispatch:
@@ -107,15 +107,52 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
           FACEBOOK_COOKIES_TXT: ${{ secrets.FACEBOOK_COOKIES_TXT }}
-          MEDIA_URL_INPUT: ${{ inputs.media_url }}
-          COMPRESSION_LEVEL_INPUT: ${{ inputs.compression_level }}
-          SEND_AS_INPUT: ${{ inputs.send_as }}
-          OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
-          CHAT_ID_INPUT: ${{ inputs.chat_id }}
-          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
-          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
-          REPLY_TO_MESSAGE_ID: ${{ inputs.reply_to_message_id }}
-          DISPATCH_KEY: ${{ inputs.dispatch_key }}
         run: |
           set -euo pipefail
+
+          # Load sensitive workflow inputs after the job starts so they do not appear in the Actions env block.
+          get_workflow_input() {
+            local input_name="$1"
+            local fallback_env="${2:-}"
+
+            if [ -n "${GITHUB_ACTIONS:-}" ] && [ -n "${GITHUB_EVENT_PATH:-}" ]; then
+              python3 -c 'import json, os, sys; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print(((data.get("inputs") or {}).get(sys.argv[1], "") or ""), end="")' "$input_name"
+            elif [ -n "$fallback_env" ]; then
+              printf "%s" "${!fallback_env:-}"
+            fi
+          }
+
+          mask_if_set() {
+            [ -z "${1:-}" ] && return 0
+            local value="$1"
+            value="${value//'%'/'%25'}"
+            value="${value//$'\r'/'%0D'}"
+            value="${value//$'\n'/'%0A'}"
+            echo "::add-mask::$value"
+          }
+
+          MEDIA_URL_INPUT="$(get_workflow_input media_url MEDIA_URL_INPUT)"
+          COMPRESSION_LEVEL_INPUT="$(get_workflow_input compression_level COMPRESSION_LEVEL_INPUT)"
+          SEND_AS_INPUT="$(get_workflow_input send_as SEND_AS_INPUT)"
+          OUTPUT_FILENAME_INPUT="$(get_workflow_input output_filename OUTPUT_FILENAME_INPUT)"
+          CHAT_ID_INPUT="$(get_workflow_input chat_id CHAT_ID_INPUT)"
+          PROGRESS_CHAT_ID="$(get_workflow_input progress_chat_id PROGRESS_CHAT_ID)"
+          PROGRESS_MESSAGE_ID="$(get_workflow_input progress_message_id PROGRESS_MESSAGE_ID)"
+          REPLY_TO_MESSAGE_ID="$(get_workflow_input reply_to_message_id REPLY_TO_MESSAGE_ID)"
+          DISPATCH_KEY="$(get_workflow_input dispatch_key DISPATCH_KEY)"
+
+          COMPRESSION_LEVEL_INPUT="${COMPRESSION_LEVEL_INPUT:-50}"
+          SEND_AS_INPUT="${SEND_AS_INPUT:-video}"
+
+          mask_if_set "$MEDIA_URL_INPUT"
+          mask_if_set "$OUTPUT_FILENAME_INPUT"
+          mask_if_set "$CHAT_ID_INPUT"
+          mask_if_set "$PROGRESS_CHAT_ID"
+          mask_if_set "$PROGRESS_MESSAGE_ID"
+          mask_if_set "$REPLY_TO_MESSAGE_ID"
+          mask_if_set "$DISPATCH_KEY"
+
+          export MEDIA_URL_INPUT COMPRESSION_LEVEL_INPUT SEND_AS_INPUT OUTPUT_FILENAME_INPUT
+          export CHAT_ID_INPUT PROGRESS_CHAT_ID PROGRESS_MESSAGE_ID REPLY_TO_MESSAGE_ID DISPATCH_KEY
+
           python3 scripts/video_compress/video_compress_worker.py

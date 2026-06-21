@@ -74,29 +74,6 @@ jobs:
         shell: bash
 
     steps:
-      - name: Mask runtime inputs
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const inputs = context.payload.inputs || {};
-            const keys = [
-              "source_url",
-              "search_query",
-              "output_filename",
-              "chat_id",
-              "progress_chat_id",
-              "progress_message_id",
-              "reply_to_message_id",
-              "dispatch_key",
-            ];
-
-            for (const key of keys) {
-              const value = inputs[key];
-              if (value) {
-                core.setSecret(String(value));
-              }
-            }
-
       - name: Load and verify audio media script
         env:
           GH_TOKEN: ${{ github.token }}
@@ -123,15 +100,52 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           YOUTUBE_COOKIES_TXT: ${{ secrets.YOUTUBE_COOKIES_TXT }}
           FACEBOOK_COOKIES_TXT: ${{ secrets.FACEBOOK_COOKIES_TXT }}
-          SOURCE_URL_INPUT: ${{ inputs.source_url }}
-          SEARCH_QUERY_INPUT: ${{ inputs.search_query }}
-          AUDIO_FORMAT_INPUT: ${{ inputs.audio_format }}
-          OUTPUT_FILENAME_INPUT: ${{ inputs.output_filename }}
-          CHAT_ID_INPUT: ${{ inputs.chat_id }}
-          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
-          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
-          REPLY_TO_MESSAGE_ID: ${{ inputs.reply_to_message_id }}
-          DISPATCH_KEY: ${{ inputs.dispatch_key }}
         run: |
           set -euo pipefail
+
+          # Load sensitive workflow inputs after the job starts so they do not appear in the Actions env block.
+          get_workflow_input() {
+            local input_name="$1"
+            local fallback_env="${2:-}"
+
+            if [ -n "${GITHUB_ACTIONS:-}" ] && [ -n "${GITHUB_EVENT_PATH:-}" ]; then
+              python3 -c 'import json, os, sys; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print(((data.get("inputs") or {}).get(sys.argv[1], "") or ""), end="")' "$input_name"
+            elif [ -n "$fallback_env" ]; then
+              printf "%s" "${!fallback_env:-}"
+            fi
+          }
+
+          mask_if_set() {
+            [ -z "${1:-}" ] && return 0
+            local value="$1"
+            value="${value//'%'/'%25'}"
+            value="${value//$'\r'/'%0D'}"
+            value="${value//$'\n'/'%0A'}"
+            echo "::add-mask::$value"
+          }
+
+          SOURCE_URL_INPUT="$(get_workflow_input source_url SOURCE_URL_INPUT)"
+          SEARCH_QUERY_INPUT="$(get_workflow_input search_query SEARCH_QUERY_INPUT)"
+          AUDIO_FORMAT_INPUT="$(get_workflow_input audio_format AUDIO_FORMAT_INPUT)"
+          OUTPUT_FILENAME_INPUT="$(get_workflow_input output_filename OUTPUT_FILENAME_INPUT)"
+          CHAT_ID_INPUT="$(get_workflow_input chat_id CHAT_ID_INPUT)"
+          PROGRESS_CHAT_ID="$(get_workflow_input progress_chat_id PROGRESS_CHAT_ID)"
+          PROGRESS_MESSAGE_ID="$(get_workflow_input progress_message_id PROGRESS_MESSAGE_ID)"
+          REPLY_TO_MESSAGE_ID="$(get_workflow_input reply_to_message_id REPLY_TO_MESSAGE_ID)"
+          DISPATCH_KEY="$(get_workflow_input dispatch_key DISPATCH_KEY)"
+
+          AUDIO_FORMAT_INPUT="${AUDIO_FORMAT_INPUT:-mp3}"
+
+          mask_if_set "$SOURCE_URL_INPUT"
+          mask_if_set "$SEARCH_QUERY_INPUT"
+          mask_if_set "$OUTPUT_FILENAME_INPUT"
+          mask_if_set "$CHAT_ID_INPUT"
+          mask_if_set "$PROGRESS_CHAT_ID"
+          mask_if_set "$PROGRESS_MESSAGE_ID"
+          mask_if_set "$REPLY_TO_MESSAGE_ID"
+          mask_if_set "$DISPATCH_KEY"
+
+          export SOURCE_URL_INPUT SEARCH_QUERY_INPUT AUDIO_FORMAT_INPUT OUTPUT_FILENAME_INPUT
+          export CHAT_ID_INPUT PROGRESS_CHAT_ID PROGRESS_MESSAGE_ID REPLY_TO_MESSAGE_ID DISPATCH_KEY
+
           python3 scripts/audio_media/audio_media_worker.py

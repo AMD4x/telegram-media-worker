@@ -1,5 +1,5 @@
 name: TikTok Direct Local API
-run-name: "AMD4x TikTok Direct ${{ inputs.dispatch_key }}"
+run-name: "AMD4x TikTok Direct"
 
 on:
   workflow_dispatch:
@@ -59,7 +59,6 @@ jobs:
     steps:
       - name: Download TikTok video and send through Local Bot API
         env:
-          MAX_HEIGHT_INPUT: ${{ inputs.max_height }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
@@ -67,24 +66,42 @@ jobs:
         run: |
           set -euo pipefail
 
-          MEDIA_URL="$(python3 -c 'import json, os; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print((data.get("inputs") or {}).get("media_url", ""))')"
+          # Load sensitive workflow inputs after the job starts so they do not appear in the Actions env block.
+          get_workflow_input() {
+            local input_name="$1"
+            local fallback_env="${2:-}"
+
+            if [ -n "${GITHUB_ACTIONS:-}" ] && [ -n "${GITHUB_EVENT_PATH:-}" ]; then
+              python3 -c 'import json, os, sys; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print(((data.get("inputs") or {}).get(sys.argv[1], "") or ""), end="")' "$input_name"
+            elif [ -n "$fallback_env" ]; then
+              printf "%s" "${!fallback_env:-}"
+            fi
+          }
+
+          mask_if_set() {
+            [ -z "${1:-}" ] && return 0
+            local value="$1"
+            value="${value//'%'/'%25'}"
+            value="${value//$'\r'/'%0D'}"
+            value="${value//$'\n'/'%0A'}"
+            echo "::add-mask::$value"
+          }
+
+          MEDIA_URL="$(get_workflow_input media_url MEDIA_URL)"
+          MAX_HEIGHT_INPUT="$(get_workflow_input max_height MAX_HEIGHT_INPUT)"
+          PROGRESS_CHAT_ID="$(get_workflow_input progress_chat_id PROGRESS_CHAT_ID)"
+          PROGRESS_MESSAGE_ID="$(get_workflow_input progress_message_id PROGRESS_MESSAGE_ID)"
+          DISPATCH_KEY="$(get_workflow_input dispatch_key DISPATCH_KEY)"
 
           if [ -z "${MEDIA_URL:-}" ]; then
             echo "ERROR: media_url input is missing."
             exit 1
           fi
 
-          echo "::add-mask::${MEDIA_URL}"
-          PROGRESS_CHAT_ID="$(python3 -c 'import json, os; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print((data.get("inputs") or {}).get("progress_chat_id", ""))')"
-          PROGRESS_MESSAGE_ID="$(python3 -c 'import json, os; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print((data.get("inputs") or {}).get("progress_message_id", ""))')"
-
-          if [ -n "${PROGRESS_CHAT_ID:-}" ]; then
-            echo "::add-mask::${PROGRESS_CHAT_ID}"
-          fi
-
-          if [ -n "${PROGRESS_MESSAGE_ID:-}" ]; then
-            echo "::add-mask::${PROGRESS_MESSAGE_ID}"
-          fi
+          mask_if_set "$MEDIA_URL"
+          mask_if_set "$PROGRESS_CHAT_ID"
+          mask_if_set "$PROGRESS_MESSAGE_ID"
+          mask_if_set "$DISPATCH_KEY"
 
           echo "== TikTok Direct Local API =="
 

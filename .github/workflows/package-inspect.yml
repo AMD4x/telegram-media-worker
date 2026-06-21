@@ -1,5 +1,5 @@
 name: Package Inspector
-run-name: "AMD4x Package Inspect · ${{ inputs.dispatch_key }}"
+run-name: "AMD4x Package Inspect"
 
 on:
   workflow_dispatch:
@@ -73,20 +73,44 @@ jobs:
           ADMIN_ID: ${{ secrets.ADMIN_ID }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-          SOURCE_URL: ${{ inputs.source_url }}
-          PROGRESS_CHAT_ID: ${{ inputs.progress_chat_id }}
-          PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
-          DISPATCH_KEY: ${{ inputs.dispatch_key }}
-          SEND_TELEGRAM: ${{ inputs.send_telegram }}
         run: |
           set -euo pipefail
           mkdir -p work/package-inspect
-          echo "::add-mask::${SOURCE_URL}"
+
+          # Load sensitive workflow inputs after the job starts so they do not appear in the Actions env block.
+          get_workflow_input() {
+            local input_name="$1"
+            local fallback_env="${2:-}"
+
+            if [ -n "${GITHUB_ACTIONS:-}" ] && [ -n "${GITHUB_EVENT_PATH:-}" ]; then
+              python3 -c 'import json, os, sys; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print(((data.get("inputs") or {}).get(sys.argv[1], "") or ""), end="")' "$input_name"
+            elif [ -n "$fallback_env" ]; then
+              printf "%s" "${!fallback_env:-}"
+            fi
+          }
+
+          mask_if_set() {
+            [ -z "${1:-}" ] && return 0
+            local value="$1"
+            value="${value//'%'/'%25'}"
+            value="${value//$'\r'/'%0D'}"
+            value="${value//$'\n'/'%0A'}"
+            echo "::add-mask::$value"
+          }
+
+          SOURCE_URL="$(get_workflow_input source_url SOURCE_URL)"
+          PROGRESS_CHAT_ID="$(get_workflow_input progress_chat_id PROGRESS_CHAT_ID)"
+          PROGRESS_MESSAGE_ID="$(get_workflow_input progress_message_id PROGRESS_MESSAGE_ID)"
+          DISPATCH_KEY="$(get_workflow_input dispatch_key DISPATCH_KEY)"
+          SEND_TELEGRAM="$(get_workflow_input send_telegram SEND_TELEGRAM)"
+
+          mask_if_set "$SOURCE_URL"
+          mask_if_set "$PROGRESS_CHAT_ID"
+          mask_if_set "$PROGRESS_MESSAGE_ID"
+          mask_if_set "$DISPATCH_KEY"
           [ -n "${TELEGRAM_TOKEN:-}" ] && echo "::add-mask::${TELEGRAM_TOKEN}"
           [ -n "${TELEGRAM_CHAT_ID:-}" ] && echo "::add-mask::${TELEGRAM_CHAT_ID}"
           [ -n "${ADMIN_ID:-}" ] && echo "::add-mask::${ADMIN_ID}"
-          [ -n "${PROGRESS_CHAT_ID:-}" ] && echo "::add-mask::${PROGRESS_CHAT_ID}"
-          [ -n "${PROGRESS_MESSAGE_ID:-}" ] && echo "::add-mask::${PROGRESS_MESSAGE_ID}"
 
           python3 scripts/package_tools/inspect.py \
             --source-url "$SOURCE_URL" \
@@ -102,11 +126,37 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
           REF_NAME: ${{ github.ref_name }}
-          DISPATCH_KEY: ${{ inputs.dispatch_key }}
           PACKAGE_MANIFEST_KEY: ${{ secrets.PACKAGE_MANIFEST_KEY }}
         run: |
           set -euo pipefail
+          # Load sensitive workflow inputs after the job starts so they do not appear in the Actions env block.
+          get_workflow_input() {
+            local input_name="$1"
+            local fallback_env="${2:-}"
+
+            if [ -n "${GITHUB_ACTIONS:-}" ] && [ -n "${GITHUB_EVENT_PATH:-}" ]; then
+              python3 -c 'import json, os, sys; data=json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8")); print(((data.get("inputs") or {}).get(sys.argv[1], "") or ""), end="")' "$input_name"
+            elif [ -n "$fallback_env" ]; then
+              printf "%s" "${!fallback_env:-}"
+            fi
+          }
+
+          mask_if_set() {
+            [ -z "${1:-}" ] && return 0
+            local value="$1"
+            value="${value//'%'/'%25'}"
+            value="${value//$'\r'/'%0D'}"
+            value="${value//$'\n'/'%0A'}"
+            echo "::add-mask::$value"
+          }
+
+          DISPATCH_KEY="$(get_workflow_input dispatch_key DISPATCH_KEY)"
+          DISPATCH_KEY="${DISPATCH_KEY:-manual}"
+
+          mask_if_set "$DISPATCH_KEY"
           [ -n "${PACKAGE_MANIFEST_KEY:-}" ] && echo "::add-mask::${PACKAGE_MANIFEST_KEY}"
+
+          export DISPATCH_KEY
 
           if [ -z "${PACKAGE_MANIFEST_KEY:-}" ]; then
             echo "PACKAGE_MANIFEST_KEY_MISSING=1"
