@@ -7,6 +7,7 @@ import zipfile
 import base64
 import binascii
 import gzip
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -243,6 +244,23 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
 
         return None
 
+    def extract_magnet_trackers(value: str) -> list[str]:
+        trackers: list[str] = []
+
+        try:
+            parsed = urllib.parse.urlparse(value)
+            for key, raw_tracker in urllib.parse.parse_qsl(parsed.query, keep_blank_values=False):
+                if key != "tr":
+                    continue
+
+                tracker = urllib.parse.unquote(str(raw_tracker or "")).strip()
+                if tracker and tracker not in trackers:
+                    trackers.append(tracker)
+        except Exception:
+            return []
+
+        return trackers
+
     def find_latest_torrent_file(*roots: Path) -> Path | None:
         candidates: list[Path] = []
 
@@ -341,14 +359,21 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
 
                 warnings.append("Torrent cache returned metadata, but aria2c -S did not return a parsable file list.")
 
+        metadata_dir = work_dir / "torrent_metadata"
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+
         runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp")
         dht_file = runner_temp / "aria2-dht-package-inspect.dat"
+        tracker_args = []
+        trackers = extract_magnet_trackers(source_url)
+        if trackers:
+            tracker_args = [f"--bt-tracker={','.join(trackers)}"]
 
         metadata_cmd = [
             "timeout",
             "240s",
             "aria2c",
-            f"--dir={work_dir}",
+            f"--dir={metadata_dir}",
             "--bt-metadata-only=true",
             "--bt-save-metadata=true",
             "--seed-time=0",
@@ -361,6 +386,7 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
             "--bt-stop-timeout=180",
             "--summary-interval=0",
             "--console-log-level=warn",
+            *tracker_args,
             source_url,
         ]
 
@@ -371,7 +397,10 @@ def inspect_torrent(source_url: str, work_dir: Path) -> tuple[list[dict[str, Any
             check=False,
         )
 
-        torrent_file = find_latest_torrent_file(work_dir, runner_temp, Path.cwd())
+        print(f"TORRENT_METADATA_FETCH_RC={metadata_result.returncode}")
+
+        torrent_file = find_latest_torrent_file(metadata_dir, work_dir, runner_temp, Path.cwd())
+        print(f"TORRENT_METADATA_FILE_FOUND={1 if torrent_file else 0}")
 
         if torrent_file:
             items = list_torrent_file(torrent_file)
