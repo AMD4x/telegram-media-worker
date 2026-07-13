@@ -889,6 +889,437 @@ jobs:
           PY
           }
 
+          try_intermediate_document_download() {
+            set +e
+
+            local output_file="$1"
+            local header_file="$2"
+            local resolver_rc
+
+            rm -f "$output_file" "$header_file"
+
+            python3 - "$SOURCE_URL" "$REFERER_URL" "$output_file" "$header_file" >/dev/null 2>&1 <<'PY'
+          import collections
+          import http.cookiejar
+          import ipaddress
+          import os
+          import re
+          import socket
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from html.parser import HTMLParser
+
+          source_url, initial_referer, output_file, header_file = sys.argv[1:5]
+
+          USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          MAX_HTML_BYTES = 2 * 1024 * 1024
+          MAX_REQUESTS = 8
+          MAX_DEPTH = 3
+          STREAM_CHUNK = 1024 * 1024
+
+          POSITIVE_TERMS = {
+              "download": 12,
+              "direct": 8,
+              "attachment": 8,
+              "confirm": 7,
+              "export": 6,
+              "save": 5,
+              "fetch": 4,
+              "file": 3,
+              "document": 2,
+              "get": 1,
+              "start": 1,
+              "continue": 1,
+          }
+          NEGATIVE_TERMS = (
+              "login",
+              "log-in",
+              "signin",
+              "sign-in",
+              "logout",
+              "signout",
+              "register",
+              "signup",
+              "password",
+              "account",
+              "delete",
+              "remove",
+              "unsubscribe",
+              "upload",
+          )
+          FILE_EXTENSIONS = (
+              ".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz",
+              ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt",
+              ".mp3", ".m4a", ".wav", ".flac", ".mp4", ".mkv", ".mov",
+              ".avi", ".webm", ".jpg", ".jpeg", ".png", ".webp", ".bin",
+          )
+
+          def cleanup_partial():
+              for path in (output_file, output_file + ".part", header_file):
+                  try:
+                      os.remove(path)
+                  except FileNotFoundError:
+                      pass
+                  except OSError:
+                      pass
+
+          def is_public_http_url(url):
+              try:
+                  parsed = urllib.parse.urlsplit(url)
+              except Exception:
+                  return False
+
+              if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
+                  return False
+
+              host = parsed.hostname.rstrip(".").lower()
+              if host in {"localhost", "localhost.localdomain"} or host.endswith((".local", ".internal", ".localhost")):
+                  return False
+
+              try:
+                  addresses = {item[4][0] for item in socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme.lower() == "https" else 80), type=socket.SOCK_STREAM)}
+              except Exception:
+                  return False
+
+              if not addresses:
+                  return False
+
+              for address in addresses:
+                  try:
+                      ip = ipaddress.ip_address(address.split("%", 1)[0])
+                  except ValueError:
+                      return False
+
+                  if not ip.is_global:
+                      return False
+
+              return True
+
+          def header_filename(final_url):
+              try:
+                  path = urllib.parse.urlsplit(final_url).path
+                  value = urllib.parse.unquote(path.rsplit("/", 1)[-1]).strip()
+              except Exception:
+                  return ""
+
+              value = re.sub(r"[\x00-\x1f\x7f]", "", value)
+              value = re.sub(r"[\\/*?:\"<>|]", "", value)
+              value = re.sub(r"\s+", " ", value).strip().strip(".")
+              if not value or "." not in value:
+                  return ""
+              return value[:120]
+
+          def write_headers(response):
+              status = getattr(response, "status", 200)
+              reason = getattr(response, "reason", "OK")
+              lines = [f"HTTP/1.1 {status} {reason}\n"]
+              has_disposition = False
+
+              for key, value in response.headers.items():
+                  if key.lower() == "content-disposition":
+                      has_disposition = True
+                  clean_value = str(value).replace("\r", " ").replace("\n", " ")
+                  lines.append(f"{key}: {clean_value}\n")
+
+              if not has_disposition:
+                  fallback_name = header_filename(response.geturl())
+                  if fallback_name:
+                      lines.append(f'Content-Disposition: attachment; filename="{fallback_name}"\n')
+
+              lines.append("\n")
+              with open(header_file, "w", encoding="utf-8", errors="ignore") as out:
+                  out.writelines(lines)
+
+          def looks_like_html(content_type, sample):
+              low_type = (content_type or "").lower()
+              if "text/html" in low_type or "application/xhtml" in low_type:
+                  return True
+
+              stripped = sample.lstrip(b"\xef\xbb\xbf\r\n\t ")
+              low = stripped[:1024].lower()
+              markers = (b"<!doctype html", b"<html", b"<head", b"<body", b"<title")
+              return any(marker in low[:512] for marker in markers)
+
+          def consume_response(response):
+              first = response.read(8192)
+              content_type = response.headers.get("Content-Type", "")
+
+              if looks_like_html(content_type, first):
+                  remaining = max(0, MAX_HTML_BYTES - len(first))
+                  body = first + (response.read(remaining) if remaining else b"")
+                  charset = response.headers.get_content_charset() or "utf-8"
+                  try:
+                      html_text = body.decode(charset, errors="replace")
+                  except LookupError:
+                      html_text = body.decode("utf-8", errors="replace")
+                  return "html", html_text
+
+              temp_output = output_file + ".part"
+              with open(temp_output, "wb") as out:
+                  if first:
+                      out.write(first)
+                  while True:
+                      chunk = response.read(STREAM_CHUNK)
+                      if not chunk:
+                          break
+                      out.write(chunk)
+
+              if os.path.getsize(temp_output) <= 0:
+                  raise ValueError("empty response")
+
+              write_headers(response)
+              os.replace(temp_output, output_file)
+              return "file", ""
+
+          class DownloadPageParser(HTMLParser):
+              def __init__(self):
+                  super().__init__(convert_charrefs=True)
+                  self.base_href = ""
+                  self.links = []
+                  self.forms = []
+                  self.meta_refresh = []
+                  self.current_anchor = None
+                  self.current_form = None
+                  self.current_button = None
+
+              @staticmethod
+              def attrs_dict(attrs):
+                  return {str(key).lower(): (value or "") for key, value in attrs}
+
+              def handle_starttag(self, tag, attrs):
+                  tag = tag.lower()
+                  values = self.attrs_dict(attrs)
+
+                  if tag == "base" and values.get("href") and not self.base_href:
+                      self.base_href = values["href"]
+                  elif tag == "a" and values.get("href"):
+                      self.current_anchor = {"href": values["href"], "text": []}
+                  elif tag == "meta" and values.get("http-equiv", "").lower() == "refresh":
+                      content = values.get("content", "")
+                      match = re.search(r"(?:^|;)\s*url\s*=\s*['\"]?([^'\";]+)", content, re.I)
+                      if match:
+                          self.meta_refresh.append(match.group(1).strip())
+                  elif tag == "form":
+                      self.current_form = {
+                          "action": values.get("action", ""),
+                          "method": values.get("method", "get").lower(),
+                          "fields": [],
+                          "labels": [],
+                          "unsafe": False,
+                      }
+                  elif tag == "input" and self.current_form is not None:
+                      input_type = values.get("type", "text").lower()
+                      name = values.get("name", "")
+                      value = values.get("value", "")
+
+                      if input_type in ("password", "file"):
+                          self.current_form["unsafe"] = True
+                      elif name and input_type not in ("button", "reset"):
+                          if input_type in ("checkbox", "radio") and "checked" not in values:
+                              return
+                          self.current_form["fields"].append((name, value))
+                          if input_type in ("submit", "image"):
+                              self.current_form["labels"].append(value)
+                  elif tag == "button" and self.current_form is not None:
+                      self.current_button = {
+                          "name": values.get("name", ""),
+                          "value": values.get("value", ""),
+                          "type": values.get("type", "submit").lower(),
+                          "text": [],
+                      }
+
+              def handle_data(self, data):
+                  if self.current_anchor is not None:
+                      self.current_anchor["text"].append(data)
+                  if self.current_button is not None:
+                      self.current_button["text"].append(data)
+
+              def handle_endtag(self, tag):
+                  tag = tag.lower()
+                  if tag == "a" and self.current_anchor is not None:
+                      self.current_anchor["text"] = " ".join(self.current_anchor["text"]).strip()
+                      self.links.append(self.current_anchor)
+                      self.current_anchor = None
+                  elif tag == "button" and self.current_button is not None and self.current_form is not None:
+                      label = " ".join(self.current_button["text"]).strip() or self.current_button["value"]
+                      if label:
+                          self.current_form["labels"].append(label)
+                      if self.current_button["type"] == "submit" and self.current_button["name"]:
+                          self.current_form["fields"].append((self.current_button["name"], self.current_button["value"] or label))
+                      self.current_button = None
+                  elif tag == "form" and self.current_form is not None:
+                      self.forms.append(self.current_form)
+                      self.current_form = None
+                      self.current_button = None
+
+          def score_text(value):
+              low = urllib.parse.unquote_plus(value or "").lower()
+              if any(term in low for term in NEGATIVE_TERMS):
+                  return -100
+
+              score = 0
+              for term, weight in POSITIVE_TERMS.items():
+                  if term in low:
+                      score += weight
+
+              path = urllib.parse.urlsplit(value or "").path.lower()
+              if path.endswith(FILE_EXTENSIONS):
+                  score += 10
+              return score
+
+          def build_candidates(html_text, page_url, depth):
+              parser = DownloadPageParser()
+              try:
+                  parser.feed(html_text)
+              except Exception:
+                  pass
+
+              base_url = urllib.parse.urljoin(page_url, parser.base_href or page_url)
+              ranked = []
+
+              for target in parser.meta_refresh:
+                  url = urllib.parse.urljoin(base_url, target)
+                  ranked.append((30, "GET", url, None, page_url, depth + 1))
+
+              js_patterns = (
+                  r"(?:window\s*\.\s*)?location(?:\s*\.\s*href)?\s*=\s*['\"]([^'\"]+)['\"]",
+                  r"window\s*\.\s*open\s*\(\s*['\"]([^'\"]+)['\"]",
+              )
+              for pattern in js_patterns:
+                  for match in re.finditer(pattern, html_text, re.I):
+                      url = urllib.parse.urljoin(base_url, match.group(1).strip())
+                      ranked.append((25, "GET", url, None, page_url, depth + 1))
+
+              for link in parser.links:
+                  url = urllib.parse.urljoin(base_url, link["href"])
+                  score = score_text(link["href"] + " " + link.get("text", ""))
+                  if score >= 3:
+                      ranked.append((score, "GET", url, None, page_url, depth + 1))
+
+              for form in parser.forms:
+                  if form["unsafe"] or form["method"] not in ("get", "post"):
+                      continue
+
+                  action = urllib.parse.urljoin(base_url, form["action"] or page_url)
+                  corpus = " ".join([
+                      form["action"],
+                      " ".join(name for name, _value in form["fields"]),
+                      " ".join(value for _name, value in form["fields"]),
+                      " ".join(form["labels"]),
+                  ])
+                  score = score_text(corpus)
+                  if form["method"] == "post":
+                      score += 2
+                  if score < 3:
+                      continue
+
+                  encoded = urllib.parse.urlencode(form["fields"], doseq=True)
+                  if form["method"] == "get":
+                      parts = urllib.parse.urlsplit(action)
+                      query = "&".join(item for item in (parts.query, encoded) if item)
+                      target = urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+                      ranked.append((score, "GET", target, None, page_url, depth + 1))
+                  else:
+                      ranked.append((score, "POST", action, encoded.encode("utf-8"), page_url, depth + 1))
+
+              ranked.sort(key=lambda item: item[0], reverse=True)
+              result = []
+              seen = set()
+              for _score, method, url, data, referer, candidate_depth in ranked:
+                  key = (method, url, data or b"")
+                  if key in seen:
+                      continue
+                  seen.add(key)
+                  result.append((method, url, data, referer, candidate_depth))
+                  if len(result) >= 6:
+                      break
+              return result
+
+          def request_headers(referer, method):
+              headers = {
+                  "User-Agent": USER_AGENT,
+                  "Accept-Language": "en-US,en;q=0.9",
+                  "Accept": "application/octet-stream,text/html,application/xhtml+xml,*/*;q=0.8",
+              }
+              if referer:
+                  headers["Referer"] = referer
+              if method == "POST":
+                  headers["Content-Type"] = "application/x-www-form-urlencoded"
+              return headers
+
+          def main():
+              cleanup_partial()
+              if not is_public_http_url(source_url):
+                  return 1
+
+              cookie_jar = http.cookiejar.CookieJar()
+              opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
+              queue = collections.deque([("GET", source_url, None, initial_referer, 0)])
+              visited = set()
+              request_count = 0
+
+              while queue and request_count < MAX_REQUESTS:
+                  method, url, data, referer, depth = queue.popleft()
+                  if depth > MAX_DEPTH or not is_public_http_url(url):
+                      continue
+
+                  visit_key = (method, url, data or b"")
+                  if visit_key in visited:
+                      continue
+                  visited.add(visit_key)
+                  request_count += 1
+
+                  request = urllib.request.Request(
+                      url,
+                      data=data if method == "POST" else None,
+                      headers=request_headers(referer, method),
+                      method=method,
+                  )
+
+                  try:
+                      with opener.open(request, timeout=60) as response:
+                          final_url = response.geturl()
+                          if not is_public_http_url(final_url):
+                              continue
+                          result_type, payload = consume_response(response)
+                  except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, ValueError):
+                      continue
+                  except Exception:
+                      continue
+
+                  if result_type == "file":
+                      return 0
+
+                  if depth >= MAX_DEPTH:
+                      continue
+
+                  queue.extend(build_candidates(payload, final_url, depth))
+
+              cleanup_partial()
+              return 1
+
+          try:
+              raise SystemExit(main())
+          except SystemExit:
+              raise
+          except BaseException:
+              cleanup_partial()
+              raise SystemExit(1)
+          PY
+            resolver_rc=$?
+
+            if [ "$resolver_rc" -eq 0 ] && [ -s "$output_file" ] && [ -s "$header_file" ]; then
+              echo "INTERMEDIATE_DOCUMENT_DOWNLOAD=success"
+              return 0
+            fi
+
+            rm -f "$output_file" "$header_file"
+            echo "INTERMEDIATE_DOCUMENT_DOWNLOAD_FAILED=1"
+            return 1
+          }
+
           try_direct_document_download() {
             set +e
 
@@ -904,11 +1335,17 @@ jobs:
             local actual_file_name
             local actual_output_file
             local html_check
+            local resolver_output_file
+            local resolver_header_file
+            local document_attempt_label
 
             header_file="work/direct-document.headers"
+            document_attempt_label="direct-document"
             file_name="$(safe_document_file_name_from_url "$SOURCE_URL")"
             file_name="$(sanitize_document_file_name "" "$file_name")"
             output_file="work/${file_name}"
+            mask_if_set "$file_name"
+            mask_if_set "$output_file"
 
             rm -f "$header_file" "$output_file"
 
@@ -928,6 +1365,9 @@ jobs:
               if [ -n "$header_file_name" ]; then
                 file_name="$(sanitize_document_file_name "" "$header_file_name")"
                 output_file="work/${file_name}"
+                mask_if_set "$header_file_name"
+                mask_if_set "$file_name"
+                mask_if_set "$output_file"
                 rm -f "$output_file"
               fi
 
@@ -975,7 +1415,33 @@ jobs:
             if [ "$html_check" = "yes" ]; then
               echo "DIRECT_DOCUMENT_REJECTED_HTML=1"
               rm -f "$output_file"
-              return 1
+
+              resolver_output_file="work/intermediate-document.bin"
+              resolver_header_file="work/intermediate-document.headers"
+
+              progress_stage "resolving_document" "42" "Resolving" "Resolving_intermediate_download_page"
+
+              if ! try_intermediate_document_download "$resolver_output_file" "$resolver_header_file"; then
+                return 1
+              fi
+
+              output_file="$resolver_output_file"
+              header_file="$resolver_header_file"
+              document_attempt_label="intermediate-document"
+
+              size_bytes="$(stat -c%s "$output_file" 2>/dev/null || echo 0)"
+              if [ "$size_bytes" -le 0 ]; then
+                echo "INTERMEDIATE_DOCUMENT_EMPTY=1"
+                rm -f "$output_file" "$header_file"
+                return 1
+              fi
+
+              html_check="$(downloaded_document_looks_like_html "$output_file" "$header_file")"
+              if [ "$html_check" = "yes" ]; then
+                echo "INTERMEDIATE_DOCUMENT_REJECTED_HTML=1"
+                rm -f "$output_file" "$header_file"
+                return 1
+              fi
             fi
 
             actual_file_name="$(document_file_name_from_headers "$header_file")"
@@ -983,6 +1449,8 @@ jobs:
             if [ -n "$actual_file_name" ]; then
               actual_file_name="$(sanitize_document_file_name "" "$actual_file_name")"
               actual_output_file="work/${actual_file_name}"
+              mask_if_set "$actual_file_name"
+              mask_if_set "$actual_output_file"
 
               if [ "$actual_output_file" != "$output_file" ]; then
                 rm -f "$actual_output_file"
@@ -998,7 +1466,7 @@ jobs:
             echo "::add-mask::${size_bytes}"
             echo "DIRECT_DOCUMENT_SIZE_BYTES=masked"
 
-            handle_downloaded_file "$output_file" "document" "direct-document"
+            handle_downloaded_file "$output_file" "document" "$document_attempt_label"
             return $?
           }
 
