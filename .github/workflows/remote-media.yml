@@ -807,6 +807,16 @@ jobs:
           import sys
           import urllib.parse
 
+          def repair_mojibake_filename(name):
+              try:
+                  repaired = name.encode("latin-1").decode("utf-8")
+              except (UnicodeEncodeError, UnicodeDecodeError):
+                  return name
+
+              old_arabic = sum("\u0600" <= char <= "\u06ff" for char in name)
+              new_arabic = sum("\u0600" <= char <= "\u06ff" for char in repaired)
+              return repaired if new_arabic > old_arabic else name
+
           header_path = sys.argv[1]
           value = ""
 
@@ -834,7 +844,8 @@ jobs:
                       if match:
                           value = match.group(1).strip().strip('"')
 
-          value = urllib.parse.unquote(value or "").replace("\\", "/")
+          value = urllib.parse.unquote(value or "")
+          value = repair_mojibake_filename(value).replace("\\", "/")
           value = os.path.basename(value)
           value = re.sub(r'[\x00-\x1f\x7f]', '', value)
           value = re.sub(r'[\\/*?:"<>|]', '', value)
